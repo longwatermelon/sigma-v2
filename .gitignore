@@ -1,0 +1,17 @@
+compile_commands.json
+.cache
+obj
+a.out
+out.mp4
+ffmpeg.log
+no-audio.mp4
+.vscode
+
+# Large video files (too big for GitHub)
+res/video/parkour.mp4
+res/video/edit/bateman.mp4
+res/video/compare/shelby-win.mp4
+res/video/compare/shelby.mp4  
+res/video/compare/walter.mp4
+res/video/edit/shelby.mp4
+res/video/edit/anime.mp4
