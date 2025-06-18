@@ -4,11 +4,9 @@ To run this, download the full `res` folder [here](https://drive.proton.me/urls/
 
 Improved version of https://github.com/longwatermelon/sigma-edit. Generated videos are posted [here](https://www.youtube.com/@BasedSigmaCentral).
 
-Implemented features so far:
-* Edit (Bateman, Shelby)
+Implemented formats so far:
+* Edit (Bateman, Shelby, anime)
 * Meme compilation
 * Comparison
-
-Todo:
-* Month
-* Try not to change your wallpaper
+* Quiz
+* Conspiracy theories
