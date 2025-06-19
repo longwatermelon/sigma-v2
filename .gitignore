@@ -7,6 +7,12 @@ ffmpeg.log
 no-audio.mp4
 .vscode
 
+# Piper TTS (downloaded by setup-piper.sh)
+piper/
+piper_linux_x86_64.tar.gz
+*.onnx
+*.onnx.json
+
 # Large video files (too big for GitHub)
 res/video/parkour.mp4
 res/video/edit/bateman.mp4

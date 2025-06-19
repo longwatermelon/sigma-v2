@@ -124,11 +124,16 @@ inline string tts_preproc(string s) {
     return s;
 }
 
+inline void tts_generate(const string &text, const string &output_file) {
+    string piper_cmd = "echo \""+tts_preproc(text)+"\" | ./piper/piper --model piper/en_US-lessac-medium.onnx --output_file "+output_file+" --quiet";
+    system(piper_cmd.c_str());
+}
+
 inline double tts_dur(const string &s) {
-    // Generate temporary WAV via espeak
+    // Generate temporary WAV via Piper
     string in_file = "out/ttsdur.wav";
     string out_file = "out/ttsdur_trim.wav";
-    system(("espeak-ng \""+tts_preproc(s)+"\" -w "+in_file).c_str());
+    tts_generate(s, in_file);
 
     // Remove trailing silence using ffmpeg's silenceremove filter
     // We only target the end (stop_*) parameters so the beginning remains untouched.
