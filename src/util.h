@@ -125,7 +125,7 @@ inline string tts_preproc(string s) {
 }
 
 inline void tts_generate(const string &text, const string &output_file) {
-    string piper_cmd = "echo \""+tts_preproc(text)+"\" | ./piper/piper --model piper/en_US-lessac-medium.onnx --output_file "+output_file+" --quiet";
+    string piper_cmd = "echo \""+tts_preproc(text)+"\" | ./piper/piper --model piper/en_US-lessac-medium.onnx --output_file "+output_file+" --quiet >/dev/null 2>&1";
     system(piper_cmd.c_str());
 }
 
@@ -135,9 +135,9 @@ inline double tts_dur(const string &s) {
     string out_file = "out/ttsdur_trim.wav";
     tts_generate(s, in_file);
 
-    // Remove trailing silence using ffmpeg's silenceremove filter
-    // We only target the end (stop_*) parameters so the beginning remains untouched.
-    string trim_cmd = "ffmpeg -y -i "+in_file+" -af silenceremove=start_periods=0:stop_periods=1:stop_duration=0.05:stop_threshold=-70dB "+out_file+" -loglevel quiet";
+    // Remove trailing silence using ffmpeg's silenceremove filter with reverse trick
+    // Reverse audio, remove silence from start (which is the original end), then reverse back
+    string trim_cmd = "ffmpeg -y -i "+in_file+" -af \"areverse,silenceremove=start_periods=1:start_duration=0.01:start_threshold=-50dB,areverse\" "+out_file+" -loglevel quiet";
     system(trim_cmd.c_str());
 
     // Measure duration of the trimmed audio

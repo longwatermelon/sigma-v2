@@ -3,6 +3,7 @@
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/freetype.hpp>
+#include <chrono>
 
 struct clip_t {
     int st; // start time
@@ -50,6 +51,9 @@ vec<float> video::create(VideoWriter &out, VideoCapture &src, vec<Evt> evts, vec
     // note last evt is a kill (1)
     vec<pair<int,pair<int,int>>> pq(all(nxt));
     vec<int> active;
+    
+    // Track start time for ETA calculation
+    auto start_time = std::chrono::high_resolution_clock::now();
     for (int i=0; i<sz(pq)-1; ++i) {
         fflush(stdout);
 
@@ -90,7 +94,26 @@ vec<float> video::create(VideoWriter &out, VideoCapture &src, vec<Evt> evts, vec
         int st=pq[i].first;
         int nd=pq[i+1].first;
         for (int frm=st; frm<nd; ++frm) {
-            printf("\rframes: %d/%d (%d%% done)", frm+1, pq.back().first, (int)((float)(frm+1)/pq.back().first*100));
+            // Calculate ETA
+            auto current_time = std::chrono::high_resolution_clock::now();
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(current_time - start_time).count();
+            
+            int current_frame = frm + 1;
+            int total_frames = pq.back().first;
+            int percentage = (int)((float)current_frame / total_frames * 100);
+            
+            string eta_str = "";
+            if (current_frame > 0 && elapsed > 0) {
+                double frames_per_second = (double)current_frame / elapsed;
+                int remaining_frames = total_frames - current_frame;
+                int eta_seconds = (int)(remaining_frames / frames_per_second);
+                
+                int eta_minutes = eta_seconds / 60;
+                eta_seconds = eta_seconds % 60;
+                eta_str = " " + to_string(eta_minutes) + "m " + to_string(eta_seconds) + "s left";
+            }
+            
+            printf("\rframes: %d/%d (%d%% done)%s", current_frame, total_frames, percentage, eta_str.c_str());
             fflush(stdout);
 
             Mat res=write_evt(src, active, frm, evts, aud);
@@ -821,12 +844,11 @@ Mat video::write_evt(VideoCapture &src, const vec<int> &active, int frm, const v
             // CAPTION - no effects applied here
             draw_text_bottom(res, evts[ind].caption_text, 70, Scalar(255,255,255));
             if (frm==evts[ind].st) {
-                // Generate speech audio using espeak-ng
+                // Generate speech audio using Piper TTS
                 int idx = sz(aud);
                 string wav_path = "out/" + to_string(idx) + ".wav";
 
-                string gen_cmd = "espeak-ng \"" + tts_preproc(evts[ind].caption_text) + "\" -w " + wav_path;
-                system(gen_cmd.c_str());
+                tts_generate(evts[ind].caption_text, wav_path);
 
                 // Trim trailing silence to avoid awkward pauses
                 string tmp_path = "out/tmp_trim.wav";

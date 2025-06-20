@@ -654,7 +654,7 @@ namespace conspiracy {
 
         // gen content
         printf("sending openai request...\n");
-        string body = openai_req("gpt-4.1", "Write a sigma male conspiracy theory. Make it 6 sentences long, and each sentence should be a low-medium length. After each sentence ends, put a \"====\" at the end before the start of the next sentence. The general topic is: `"+topic+"`. Make it really delusional and ridiculous, but make it convincing too. Start off with a hook that'll reel people in.");
+        string body = openai_req("gpt-4.1", "Write a sigma male conspiracy theory. Make it 5 sentences long, and each sentence should be a low-medium length. After each sentence ends, put a \"====\" at the end before the start of the next sentence. The general topic is: `"+topic+"`. Make it really delusional and ridiculous, but make it convincing too. Start off with a hook that'll reel people in.");
         vec<string> lines = split_on_delimiter(body);
         printf("received!\n");
         printf("%s\n", body.c_str());
