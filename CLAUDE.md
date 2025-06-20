@@ -5,8 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Setup and Build Commands
 
 ```bash
-# First-time setup (downloads Piper TTS)
-./setup-piper.sh
+# Set up OpenAI API key for TTS
+export OPENAI_API_KEY="your-api-key-here"
 
 # Build the project
 make
@@ -57,14 +57,14 @@ The system uses an event-driven architecture where different event types (Backgr
 - libcurl (OpenAI API requests)
 - nlohmann/json (JSON parsing)
 - FFmpeg (audio processing, called via system commands)
-- Piper TTS (high-quality neural text-to-speech synthesis)
+- OpenAI TTS API (high-quality neural text-to-speech synthesis)
 
 ### Resource Structure
 
 - `res/audio/`: Background music and sound effects  
 - `res/video/`: Source video files organized by type (edit/, compare/, etc.)
 - `res/font.ttf`: Font for text rendering
-- `piper/`: Piper TTS executable and voice models (auto-downloaded by setup script)
+- Environment variable `OPENAI_API_KEY` required for TTS functionality
 - `out/`: Generated video output directory
 
 ### Video Types
@@ -80,13 +80,16 @@ The system automatically generates titles and uses randomization to create varie
 
 ## Text-to-Speech System
 
-The project uses Piper TTS for high-quality neural voice synthesis. Key features:
+The project uses OpenAI's TTS API for high-quality neural voice synthesis. Key features:
 
-- **Voice Model**: en_US-lessac-medium (natural-sounding American English)
+- **Voice Model**: Onyx (natural-sounding voice from OpenAI)
+- **API**: Uses OpenAI's `/v1/audio/speech` endpoint with the `gpt-4o-mini-tts` model
+- **Audio Format**: WAV format for direct duration calculation (no FFmpeg conversion needed)
+- **Voice Control**: Uses instructions parameter for confident, authoritative tone
 - **Functions**: 
-  - `tts_generate(text, output_file)`: Generate audio file from text
+  - `tts_generate(text, output_file)`: Generate WAV audio file from text using OpenAI TTS
   - `tts_dur(text)`: Calculate duration of spoken text for timeline sync
-- **Setup**: Run `./setup-piper.sh` to automatically download Piper and voice models
+- **Setup**: Set the `OPENAI_API_KEY` environment variable with your OpenAI API key
 - **Integration**: TTS is used for duration calculations in video event timing
 
-The TTS system replaces the previous espeak-ng implementation with significantly improved voice quality using neural network models.
+The TTS system provides high-quality voice synthesis through OpenAI's latest neural models with enhanced control capabilities.

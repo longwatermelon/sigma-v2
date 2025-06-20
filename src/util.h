@@ -31,6 +31,69 @@ inline int t2frm(float t) {
     return t*FPS;
 }
 
+inline bool fix_wav_header(const std::string &filename) {
+    // Fix OpenAI's corrupted WAV headers where chunk size is set to 0xFFFFFFFF
+    std::fstream file(filename, std::ios::binary | std::ios::in | std::ios::out);
+    if (!file) {
+        std::cerr << "Error opening WAV file for fixing: " << filename << std::endl;
+        return false;
+    }
+
+    // Get actual file size
+    file.seekg(0, std::ios::end);
+    std::streamsize file_size = file.tellg();
+    file.seekg(0, std::ios::beg);
+
+    // Read and verify RIFF header
+    char riff[4];
+    file.read(riff, 4);
+    if (std::strncmp(riff, "RIFF", 4) != 0) {
+        std::cerr << "Not a valid RIFF file: " << filename << std::endl;
+        return false;
+    }
+
+    // Calculate and write correct file size (total file size - 8 bytes for RIFF header)
+    uint32_t correct_file_size = static_cast<uint32_t>(file_size - 8);
+    file.write(reinterpret_cast<const char*>(&correct_file_size), sizeof(correct_file_size));
+
+    // Skip WAVE header
+    file.seekg(12, std::ios::beg);
+
+    // Find and fix the data chunk
+    char chunkId[4];
+    uint32_t chunkSize;
+    while (file.read(chunkId, 4)) {
+        std::streampos chunk_size_pos = file.tellg();
+        file.read(reinterpret_cast<char*>(&chunkSize), sizeof(chunkSize));
+        
+        if (std::strncmp(chunkId, "data", 4) == 0) {
+            // Found data chunk - check if it has the corrupted size
+            if (chunkSize == 0xFFFFFFFF) {
+                // Calculate correct data size (remaining file size - current position)
+                std::streampos data_start = file.tellg();
+                uint32_t correct_data_size = static_cast<uint32_t>(file_size - data_start);
+                
+                // Write the correct chunk size
+                file.seekp(chunk_size_pos);
+                file.write(reinterpret_cast<const char*>(&correct_data_size), sizeof(correct_data_size));
+                file.flush();
+                
+                printf("Fixed WAV header: %s (data size: %u bytes)\n", filename.c_str(), correct_data_size);
+                return true;
+            } else {
+                // Chunk size looks normal, no fix needed
+                return true;
+            }
+        } else {
+            // Skip this chunk
+            file.seekg(chunkSize, std::ios::cur);
+        }
+    }
+    
+    std::cerr << "Data chunk not found in WAV file: " << filename << std::endl;
+    return false;
+}
+
 inline double wav_dur(const std::string &filename) {
     // Open the file in binary mode
     std::ifstream file(filename, std::ios::binary);
@@ -296,44 +359,157 @@ inline bool trim_wav_silence(const std::string &input_file, const std::string &o
     return true;
 }
 
+// Helper for CURL response
+inline static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
+    ((std::string*)userp)->append((char*)contents, size * nmemb);
+    return size * nmemb;
+}
+
 inline string tts_preproc(string s) {
     replace(all(s),'\n',' ');
     return s;
 }
 
 inline void tts_generate(const string &text, const string &output_file) {
-    string piper_cmd = "echo \""+tts_preproc(text)+"\" | ./piper/piper --model piper/en_US-lessac-medium.onnx --output_file "+output_file+" --quiet >/dev/null 2>&1";
-    system(piper_cmd.c_str());
+    printf("generating \"%s\" to %s...\n", text.c_str(), output_file.c_str());
+    string api_key = getenv("OPENAI_API_KEY") ? getenv("OPENAI_API_KEY") : "";
+    if (api_key.empty()) {
+        throw std::runtime_error("OPENAI_API_KEY environment variable not set");
+    }
+
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        throw std::runtime_error("Failed to initialize CURL for OpenAI TTS");
+    }
+
+    std::string response_data;
+    struct curl_slist* headers = NULL;
+    headers = curl_slist_append(headers, ("Authorization: Bearer " + api_key).c_str());
+    headers = curl_slist_append(headers, "Content-Type: application/json");
+
+    json request_body = {
+        {"model", "gpt-4o-mini-tts"},
+        {"input", tts_preproc(text)},
+        {"voice", "onyx"},
+        {"response_format", "wav"},
+        {"instructions", "Speak in a confident and authoritative tone with clear articulation."}
+    };
+
+    std::string request_str = request_body.dump();
+
+    string url = "https://api.openai.com/v1/audio/speech";
+    
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, request_str.c_str());
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_data);
+
+    CURLcode res = curl_easy_perform(curl);
+    
+    // Get HTTP response code
+    long http_code = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK) {
+        throw std::runtime_error("OpenAI TTS API request failed: " + std::string(curl_easy_strerror(res)));
+    }
+
+    // Check HTTP status code
+    if (http_code != 200) {
+        std::cerr << "OpenAI TTS API returned HTTP " << http_code << std::endl;
+        std::cerr << "Response: " << response_data.substr(0, 500) << std::endl;
+        
+        // Handle specific HTTP error codes
+        if (http_code == 429) {
+            throw std::runtime_error("OpenAI TTS API rate limit exceeded. Please wait before retrying.");
+        } else if (http_code == 401) {
+            throw std::runtime_error("OpenAI TTS API authentication failed. Check your API key.");
+        } else if (http_code == 400) {
+            // Bad request - likely due to invalid text
+            std::cerr << "Text that caused error: \"" << text << "\"" << std::endl;
+        }
+    }
+
+    // Check if we got a valid response
+    if (response_data.empty()) {
+        throw std::runtime_error("OpenAI TTS API returned empty response");
+    }
+    
+    // Check for JSON error response (which would start with '{')
+    if (!response_data.empty() && response_data[0] == '{') {
+        // Try to parse as JSON to get error message
+        try {
+            json error_response = json::parse(response_data);
+            std::string error_msg = "OpenAI TTS API error: ";
+            if (error_response.contains("error")) {
+                if (error_response["error"].contains("message")) {
+                    error_msg += error_response["error"]["message"].get<std::string>();
+                } else {
+                    error_msg += error_response["error"].dump();
+                }
+            } else {
+                error_msg += response_data;
+            }
+            throw std::runtime_error(error_msg);
+        } catch (const json::parse_error&) {
+            throw std::runtime_error("OpenAI TTS API returned unexpected response: " + response_data.substr(0, 100));
+        }
+    }
+
+    // Write the audio data to file
+    std::ofstream audio_file(output_file, std::ios::binary);
+    if (!audio_file) {
+        throw std::runtime_error("Failed to create output file: " + output_file);
+    }
+    audio_file.write(response_data.c_str(), response_data.size());
+    audio_file.close();
+    
+    // Verify the file was written successfully
+    std::ifstream verify_file(output_file, std::ios::binary | std::ios::ate);
+    if (!verify_file.good() || verify_file.tellg() == 0) {
+        throw std::runtime_error("Failed to write audio data to file: " + output_file);
+    }
+    verify_file.close();
+    
+    // Fix OpenAI's corrupted WAV header (chunk size = 0xFFFFFFFF)
+    if (!fix_wav_header(output_file)) {
+        throw std::runtime_error("Failed to fix WAV header for file: " + output_file);
+    }
 }
 
 inline double tts_dur(const string &s) {
-    // Generate temporary WAV via Piper
-    string in_file = "out/ttsdur.wav";
-    string out_file = "out/ttsdur_trim.wav";
-    tts_generate(s, in_file);
+    // Generate temporary WAV directly via OpenAI TTS (no conversion needed)
+    printf("checking tts duration of \"%s\"...\n", s.c_str());
+    string wav_file = "out/ttsdur.wav";
+    tts_generate(s, wav_file);
 
-    // Remove trailing silence using C++ instead of ffmpeg
-    if (!trim_wav_silence(in_file, out_file, -35.0)) {
-        std::cerr << "Failed to trim silence, using original file" << std::endl;
-        // Copy original file as fallback
-        std::ifstream src(in_file, std::ios::binary);
-        std::ofstream dst(out_file, std::ios::binary);
-        dst << src.rdbuf();
+    // Verify the WAV file was created
+    std::ifstream test_file(wav_file);
+    if (!test_file.good()) {
+        std::cerr << "WAV file was not created in tts_dur: " << wav_file << std::endl;
+        test_file.close();
+        return 1.0; // Default 1 second duration
+    }
+    test_file.close();
+
+    // Measure duration of the WAV file directly
+    double res = wav_dur(wav_file);
+
+    // Clean up temporary file
+    system(("rm " + wav_file).c_str());
+
+    // Check if wav_dur failed and return a reasonable default
+    if (res < 0) {
+        std::cerr << "Failed to measure WAV duration, using default duration" << std::endl;
+        return 1.0; // Default 1 second duration
     }
 
-    // Measure duration of the trimmed audio
-    double res = wav_dur(out_file);
-
-    // Clean up temporary files
-    system(("rm "+in_file+" "+out_file).c_str());
-
+    printf("wav dur is %.2f\n", res);
     return res;
-}
-
-// Helper for CURL response
-inline static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
-    ((std::string*)userp)->append((char*)contents, size * nmemb);
-    return size * nmemb;
 }
 
 inline std::string openai_req(const std::string& model, const std::string& prompt) {

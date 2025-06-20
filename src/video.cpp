@@ -4,6 +4,10 @@
 #include <opencv2/imgproc.hpp>
 #include <opencv2/freetype.hpp>
 #include <chrono>
+#include <thread>
+#include <map>
+#include <utility>
+#include <queue>
 
 struct clip_t {
     int st; // start time
@@ -65,9 +69,22 @@ vec<float> video::create(VideoWriter &out, VideoCapture &src, vec<Evt> evts, vec
 
             if (evts[ind].type==EvtType::Bg && evts[ind].bg_srcst_==-1) {
                 int choice;
+                int attempts = 0;
                 do {
                     choice=rand()%sz(clips);
                     if (srcbuf[choice]>0) srcbuf[choice]--;
+                    attempts++;
+                    // Prevent infinite loop - after many attempts, just pick any valid clip
+                    if (attempts > sz(clips) * 10) {
+                        for (int fallback = 0; fallback < sz(clips); fallback++) {
+                            if (evts[ind].nd-evts[ind].st <= clips[fallback].cnt) {
+                                choice = fallback;
+                                srcbuf[choice] = 0; // Reset buffer
+                                break;
+                            }
+                        }
+                        break;
+                    }
                 } while (evts[ind].nd-evts[ind].st > clips[choice].cnt || srcbuf[choice]>0);
                 srcbuf[choice]=2;
 
@@ -844,21 +861,66 @@ Mat video::write_evt(VideoCapture &src, const vec<int> &active, int frm, const v
             // CAPTION - no effects applied here
             draw_text_bottom(res, evts[ind].caption_text, 70, Scalar(255,255,255));
             if (frm==evts[ind].st) {
-                // Generate speech audio using Piper TTS
+                // Add a small delay between TTS requests to avoid rate limiting
+                static auto last_tts_time = std::chrono::steady_clock::now();
+                auto now = std::chrono::steady_clock::now();
+                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_tts_time).count();
+                if (elapsed < 100) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100 - elapsed));
+                }
+                
+                // Generate speech audio using OpenAI TTS
                 int idx = sz(aud);
                 string wav_path = "out/" + to_string(idx) + ".wav";
 
-                tts_generate(evts[ind].caption_text, wav_path);
+                try {
+                    tts_generate(evts[ind].caption_text, wav_path);
+                    last_tts_time = std::chrono::steady_clock::now(); // Update last TTS time
 
-                // Trim trailing silence using C++ instead of ffmpeg
-                string tmp_path = "out/tmp_trim.wav";
-                if (trim_wav_silence(wav_path, tmp_path, -40.0)) {
-                    system(("mv " + tmp_path + " " + wav_path).c_str());
-                } else {
-                    std::cerr << "Failed to trim silence for caption audio, using original" << std::endl;
+                    // Add a small delay to ensure file is fully written
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                    
+                    // Verify WAV file exists and has content
+                    std::ifstream wav_check(wav_path, std::ios::binary | std::ios::ate);
+                    if (!wav_check.good() || wav_check.tellg() == 0) {
+                        std::cerr << "WAV file is empty or missing: " << wav_path << std::endl;
+                        wav_check.close();
+                        // Retry TTS generation once
+                        std::cerr << "Retrying TTS generation..." << std::endl;
+                        tts_generate(evts[ind].caption_text, wav_path);
+                        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                    }
+                    wav_check.close();
+
+                    // Verify final WAV file exists and has content
+                    std::ifstream final_check(wav_path, std::ios::binary | std::ios::ate);
+                    if (final_check.good() && final_check.tellg() > 0) {
+                        final_check.close();
+
+                        // Trim trailing silence using C++ instead of ffmpeg
+                        // TEMPORARILY DISABLED - may cause hanging
+                        // string tmp_path = "out/tmp_trim.wav";
+                        // if (trim_wav_silence(wav_path, tmp_path, -40.0)) {
+                        //     system(("mv " + tmp_path + " " + wav_path).c_str());
+                        // } else {
+                        //     std::cerr << "Failed to trim silence for caption audio, using original" << std::endl;
+                        // }
+
+                        // Add to audio timeline since WAV generation succeeded
+                        aud.push_back(frm2t(evts[ind].st));
+                    } else {
+                        std::cerr << "WAV file verification failed, skipping this audio." << std::endl;
+                        final_check.close();
+                    }
+                } catch (const std::exception& e) {
+                    std::cerr << "TTS generation failed for caption: " << e.what() << std::endl;
+                    std::cerr << "Caption text was: \"" << evts[ind].caption_text << "\"" << std::endl;
+                    std::cerr << "Caption index: " << idx << std::endl;
+                    std::cerr << "Character count: " << evts[ind].caption_text.length() << std::endl;
+                    // Clean up any partial files
+                    system(("rm -f " + wav_path).c_str());
+                    // Continue without this audio
                 }
-
-                aud.push_back(frm2t(evts[ind].st));
             }
         } else if (evts[ind].type==EvtType::TimerBar) {
             // TIMER BAR

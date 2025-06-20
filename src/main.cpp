@@ -100,28 +100,57 @@ int main(int argc, char **argv) {
     // add audio events
     if (!empty(aud)) {
         printf("adding audio events...\n");
-        string audcmd = "ffmpeg -i out/out.mp4 ";
+        
+        // Check if all required WAV files exist
+        bool all_wav_exist = true;
         for (int i=0; i<sz(aud); ++i) {
-            audcmd += "-i out/"+to_string(i)+".wav ";
+            string wav_file = "out/"+to_string(i)+".wav";
+            ifstream test(wav_file);
+            if (!test.good()) {
+                printf("Missing WAV file: %s\n", wav_file.c_str());
+                all_wav_exist = false;
+            }
+            test.close();
         }
-        audcmd += "-filter_complex \"";
-        for (int i=0; i<sz(aud); ++i) {
-            int st=aud[i]*1000;
-            audcmd += "["+to_string(i+1)+":a]volume=2.0,adelay="+to_string(st)+"|"+to_string(st)+"[a"+to_string(i+1)+"]; ";
-        }
-        audcmd += "[0:a]";
-        for (int i=0; i<sz(aud); ++i) {
-            audcmd += "[a"+to_string(i+1)+"]";
-        }
-        audcmd += "amix=inputs="+to_string(sz(aud)+1)+":normalize=0:duration=first\" -c:v copy -c:a aac out/tmp.mp4 > ffmpeg.log 2>&1";
-        system(audcmd.c_str());
+        
+        if (!all_wav_exist) {
+            printf("Some WAV files are missing, skipping audio events mixing\n");
+        } else {
+            string audcmd = "ffmpeg -i out/out.mp4 ";
+            for (int i=0; i<sz(aud); ++i) {
+                audcmd += "-i out/"+to_string(i)+".wav ";
+            }
+            audcmd += "-filter_complex \"";
+            for (int i=0; i<sz(aud); ++i) {
+                int st=aud[i]*1000;
+                audcmd += "["+to_string(i+1)+":a]volume=2.0,adelay="+to_string(st)+"|"+to_string(st)+"[a"+to_string(i+1)+"]; ";
+            }
+            audcmd += "[0:a]";
+            for (int i=0; i<sz(aud); ++i) {
+                audcmd += "[a"+to_string(i+1)+"]";
+            }
+            audcmd += "amix=inputs="+to_string(sz(aud)+1)+":normalize=0:duration=first\" -c:v copy -c:a aac out/tmp.mp4 > ffmpeg.log 2>&1";
+            
+            printf("Running audio mixing command...\n");
+            int result = system(audcmd.c_str());
+            if (result != 0) {
+                printf("FFmpeg audio mixing failed with exit code: %d\n", result);
+                printf("Check ffmpeg.log for details\n");
+            }
 
-        while (!ifstream("out/tmp.mp4")) {
-            printf("[audio events] out/tmp.mp4 not detected\n");
-            this_thread::sleep_for(chrono::milliseconds(400));
+            int wait_attempts = 0;
+            while (!ifstream("out/tmp.mp4") && wait_attempts < 50) {
+                printf("[audio events] out/tmp.mp4 not detected (attempt %d/50)\n", wait_attempts + 1);
+                this_thread::sleep_for(chrono::milliseconds(400));
+                wait_attempts++;
+            }
+            
+            if (wait_attempts >= 50) {
+                printf("Timeout waiting for tmp.mp4, skipping audio events\n");
+            } else {
+                system("mv out/tmp.mp4 out/out.mp4");
+            }
         }
-        // system("ffmpeg -i out/tmp.mp4 -af \"dynaudnorm\" -c:v copy -c:a aac out/out.mp4 > ffmpeg.log 2>&1");
-        system("mv out/tmp.mp4 out/out.mp4");
         system("rm out/*.wav");
     }
 

@@ -654,7 +654,15 @@ namespace conspiracy {
 
         // gen content
         printf("sending openai request...\n");
-        string body = openai_req("gpt-4.1", "Write a sigma male conspiracy theory. Make it 5 sentences long, and each sentence should be a low-medium length. After each sentence ends, put a \"====\" at the end before the start of the next sentence. The general topic is: `"+topic+"`. Make it really delusional and ridiculous, but make it convincing too. Start off with a hook that'll reel people in.");
+        string prompt = " \
+            Write a sigma male conspiracy theory. \
+            Make it 5 sentences long, and each sentence should be a low-medium length. \
+            After each sentence ends, put a \"====\" at the end before the start of the next sentence. \
+            Make sure to cite specific events or statistics (made up or not) to support your argument. \
+            Make it really delusional and ridiculous, but make it convincing too. Start off with a hook that'll reel people in. \
+            The general topic is: `"+topic+"`. \
+        ";
+        string body = openai_req("gpt-4.1", prompt);
         vec<string> lines = split_on_delimiter(body);
         printf("received!\n");
         printf("%s\n", body.c_str());
@@ -662,7 +670,7 @@ namespace conspiracy {
         // push events
         float t=0;
         for (int i=0; i<sz(lines); ++i) {
-            // greedily segment the sentence into strings of at most 25 characters
+            // greedily segment the sentence into strings of at most 50 characters (increased from 25)
             vec<string> segs;
             {
                 string cur;
@@ -674,11 +682,21 @@ namespace conspiracy {
                     } else if (cur.size() + 1 + w.size() <= 25) {
                         cur += " " + w;
                     } else {
-                        segs.push_back(cur);
+                        // Only push segment if it's meaningful (at least 10 chars)
+                        if (cur.size() >= 10) {
+                            segs.push_back(cur);
+                        }
                         cur = w;
                     }
                 }
-                if (!cur.empty()) segs.push_back(cur);
+                if (!cur.empty()) {
+                    // If the last segment is too short, merge it with the previous one
+                    if (cur.size() < 10 && !segs.empty()) {
+                        segs.back() += " " + cur;
+                    } else {
+                        segs.push_back(cur);
+                    }
+                }
             }
 
             for (const string &seg : segs) {
