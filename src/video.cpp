@@ -850,11 +850,13 @@ Mat video::write_evt(VideoCapture &src, const vec<int> &active, int frm, const v
 
                 tts_generate(evts[ind].caption_text, wav_path);
 
-                // Trim trailing silence to avoid awkward pauses
+                // Trim trailing silence using C++ instead of ffmpeg
                 string tmp_path = "out/tmp_trim.wav";
-                string trim_cmd = "ffmpeg -y -i " + wav_path + " -af silenceremove=start_periods=0:stop_periods=1:stop_duration=0.05:stop_threshold=-70dB " + tmp_path + " -loglevel quiet";
-                system(trim_cmd.c_str());
-                system(("mv " + tmp_path + " " + wav_path).c_str());
+                if (trim_wav_silence(wav_path, tmp_path, -40.0)) {
+                    system(("mv " + tmp_path + " " + wav_path).c_str());
+                } else {
+                    std::cerr << "Failed to trim silence for caption audio, using original" << std::endl;
+                }
 
                 aud.push_back(frm2t(evts[ind].st));
             }

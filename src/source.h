@@ -23,7 +23,7 @@ inline vec<int> vidsrc_cuts(string name) {
             9726,9769,9858,9884,9954,9995,10149,10232,10326,10551,10597,10649,10815,
         };
     } else if (name=="parkour") {
-        return {0,54547};
+        return {0,26590};
     } else if (name=="anime") {
         return {
             // solo leveling
