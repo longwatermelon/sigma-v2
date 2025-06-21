@@ -78,7 +78,7 @@ inline bool fix_wav_header(const std::string &filename) {
                 file.write(reinterpret_cast<const char*>(&correct_data_size), sizeof(correct_data_size));
                 file.flush();
                 
-                printf("Fixed WAV header: %s (data size: %u bytes)\n", filename.c_str(), correct_data_size);
+                // printf("Fixed WAV header: %s (data size: %u bytes)\n", filename.c_str(), correct_data_size);
                 return true;
             } else {
                 // Chunk size looks normal, no fix needed
@@ -371,7 +371,6 @@ inline string tts_preproc(string s) {
 }
 
 inline void tts_generate(const string &text, const string &output_file) {
-    printf("generating \"%s\" to %s...\n", text.c_str(), output_file.c_str());
     string api_key = getenv("OPENAI_API_KEY") ? getenv("OPENAI_API_KEY") : "";
     if (api_key.empty()) {
         throw std::runtime_error("OPENAI_API_KEY environment variable not set");
@@ -392,7 +391,8 @@ inline void tts_generate(const string &text, const string &output_file) {
         {"input", tts_preproc(text)},
         {"voice", "onyx"},
         {"response_format", "wav"},
-        {"instructions", "Speak in a confident and authoritative tone with clear articulation."}
+        {"speed", 1.15},
+        {"instructions", "You are FURIOUS and EXPOSING the truth. Speak with seething anger and absolute authority, like a whistleblower who's been silenced for too long. Voice: Deep, intense, and commanding with barely-controlled rage. Delivery: Sharp, aggressive, and accusatory - every word is a weapon against the system. Build intensity throughout each sentence, emphasizing key words with growling contempt. Sound like you're personally offended by the lies and deception. Pronunciation: Bite consonants hard, stretch important words for emphasis, and let your anger fuel the passion behind every revelation."}
     };
 
     std::string request_str = request_body.dump();
@@ -479,11 +479,23 @@ inline void tts_generate(const string &text, const string &output_file) {
     if (!fix_wav_header(output_file)) {
         throw std::runtime_error("Failed to fix WAV header for file: " + output_file);
     }
+    
+    // Trim silence from the end using FFmpeg - aggressive trimming
+    string temp_file = output_file + "_trimmed.wav";
+    string cmd = "ffmpeg -i \"" + output_file + "\" -af \"silenceremove=stop_periods=-1:stop_duration=0.05:stop_threshold=-35dB\" -y \"" + temp_file + "\" 2>/dev/null";
+    
+    int result = system(cmd.c_str());
+    
+    if (result == 0) {
+        system(("mv \"" + temp_file + "\" \"" + output_file + "\"").c_str());
+    } else {
+        // If FFmpeg fails, clean up temp file
+        system(("rm -f \"" + temp_file + "\"").c_str());
+    }
 }
 
 inline double tts_dur(const string &s) {
     // Generate temporary WAV directly via OpenAI TTS (no conversion needed)
-    printf("checking tts duration of \"%s\"...\n", s.c_str());
     string wav_file = "out/ttsdur.wav";
     tts_generate(s, wav_file);
 
@@ -508,7 +520,6 @@ inline double tts_dur(const string &s) {
         return 1.0; // Default 1 second duration
     }
 
-    printf("wav dur is %.2f\n", res);
     return res;
 }
 

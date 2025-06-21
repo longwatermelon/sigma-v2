@@ -41,14 +41,16 @@ inline vec<int> vidsrc_cuts(string name) {
 
 enum class EvtType {
     Bg=0,
-    Region=1,
-    HBar=2,
-    Text=3,
-    TopText=4,
-    LeftText=5,
-    Caption=6,
-    TimerBar=7,
-    Sfx=8,
+    Character=1,
+    Region=2,
+    HBar=3,
+    Text=4,
+    TopText=5,
+    LeftText=6,
+    Caption=7,
+    TimerBar=8,
+    Sfx=9,
+    PngOverlay=10,
 };
 
 struct Evt {
@@ -82,8 +84,16 @@ struct Evt {
     // caption
     string caption_text;
 
+    // character
+    string character_image_path;
+
     // sfx
     string sfx_path;
+
+    // png overlay
+    string png_overlay_path;
+    int png_overlay_row;
+    int png_overlay_col;
 };
 
 inline Evt evt_bg(float st, float nd, int yoffset=0) {
@@ -158,11 +168,31 @@ inline Evt evt_timer(float st, float nd) {
     return e;
 }
 
+inline Evt evt_character(float st, float nd, string image_path) {
+    Evt e;
+    e.type=EvtType::Character;
+    e.st=t2frm(st);
+    e.nd=t2frm(nd);
+    e.character_image_path=image_path;
+    return e;
+}
+
 inline Evt evt_sfx(float st, string path) {
     Evt e;
     e.type=EvtType::Sfx;
     e.st=t2frm(st);
     e.sfx_path=path;
+    return e;
+}
+
+inline Evt evt_png_overlay(float st, float nd, string png_path, int row, int col) {
+    Evt e;
+    e.type=EvtType::PngOverlay;
+    e.st=t2frm(st);
+    e.nd=t2frm(nd);
+    e.png_overlay_path=png_path;
+    e.png_overlay_row=row;
+    e.png_overlay_col=col;
     return e;
 }
 
@@ -606,38 +636,80 @@ namespace quiz {
         vec<string> place={"First","Second","Third","Fourth","Fifth","Now for the final"};
         vec<string> answers;
         int prevst=0;
+        
+        // Track timing for PNG overlays
+        vec<pair<float,float>> thinking_periods; // question + timer periods
+        vec<pair<float,float>> drinking_periods; // all other periods
+        
+        // Intro period gets drinking image
+        drinking_periods.push_back({0, t});
+        
         for (int i=0; i<6; ++i) {
+            float section_start = t;
+            
             if (i==2) {
                 lines.push_back({t, "We're getting serious now, so\nonly true sigmas are allowed past\nthis point."});
-                t += tts_dur(lines.back().second)+0.2;
+                float intro_dur = tts_dur(lines.back().second)+0.2;
+                drinking_periods.push_back({t, t + intro_dur});
+                t += intro_dur;
             }
 
             if (i==4) {
                 lines.push_back({t, "Now the questions are getting really\nhard, so make sure to let us\nknow what you got in the comments."});
-                t += tts_dur(lines.back().second)+0.2;
+                float intro_dur = tts_dur(lines.back().second)+0.2;
+                drinking_periods.push_back({t, t + intro_dur});
+                t += intro_dur;
             }
 
+            // Question period - thinking image
+            float question_start = t;
             lines.push_back({t, place[i]+" question:\n"+questions[i].first});
             t += tts_dur(lines.back().second)+0.2;
 
-            res.push_back(evt_timer(t, t+3));
+            // Timer period - also thinking image
+            float timer_end = t + 3;
+            res.push_back(evt_timer(t, timer_end));
             res.push_back(evt_sfx(t, "res/audio/clock.wav"));
             t += 4;
+            
+            // Add thinking period (question + timer)
+            thinking_periods.push_back({question_start, timer_end});
 
             res.push_back(evt_lftxt(prevst, t, genstr(answers)));
             answers.push_back(questions[i].second.second);
             prevst=t;
+            
+            // Answer period - drinking image
+            float answer_start = t;
             lines.push_back({t, questions[i].second.first});
-            t += tts_dur(lines.back().second)+0.5;
+            float answer_dur = tts_dur(lines.back().second)+0.5;
+            drinking_periods.push_back({answer_start, answer_start + answer_dur});
+            t += answer_dur;
         }
         res.push_back(evt_lftxt(prevst, t, genstr(answers)));
 
+        // Final text - drinking image
+        float final_start = t;
         lines.push_back({t, "How did you do?\nLet us know in the comments."});
-        t += tts_dur(lines.back().second)+0.2;
+        float final_dur = tts_dur(lines.back().second)+0.2;
+        drinking_periods.push_back({final_start, final_start + final_dur});
+        t += final_dur;
 
         // put into events
         float nd=lines.back().first + tts_dur(lines.back().second) + 1;
         res.push_back(evt_bg(0,nd));
+        
+        // Add PNG overlays - positioned at mid-right (col=580, row=650)
+        // Thinking image during questions and timers
+        for (auto &[start_time, end_time] : thinking_periods) {
+            res.push_back(evt_png_overlay(start_time, end_time, "res/video/images/bateman-think.png", 650, 580));
+        }
+        
+        // Drinking image during all other periods
+        for (auto &[start_time, end_time] : drinking_periods) {
+            res.push_back(evt_png_overlay(start_time, end_time, "res/video/images/bateman-drink.png", 650, 580));
+        }
+        
         // res.push_back(evt_lftxt(0,nd,"*1EASY:\n1.\n2.\n*2MEDIUM:\n3.\n4.\n*3HARD:\n5.\n6."));
         for (auto &[t,s]:lines) {
             res.push_back(evt_caption(t, t + tts_dur(s), s));
@@ -658,7 +730,8 @@ namespace conspiracy {
             Write a sigma male conspiracy theory. \
             Make it 5 sentences long, and each sentence should be a low-medium length. \
             After each sentence ends, put a \"====\" at the end before the start of the next sentence. \
-            Make sure to cite specific events or statistics (made up or not) to support your argument. \
+            Make sure to cite specific events or statistics to support your argument. \
+            Your events or statistics don't have to be real, but make them sound convincing. \
             Make it really delusional and ridiculous, but make it convincing too. Start off with a hook that'll reel people in. \
             The general topic is: `"+topic+"`. \
         ";
@@ -670,7 +743,7 @@ namespace conspiracy {
         // push events
         float t=0;
         for (int i=0; i<sz(lines); ++i) {
-            // greedily segment the sentence into strings of at most 50 characters (increased from 25)
+            // greedily segment the sentence into strings of at most 32 characters
             vec<string> segs;
             {
                 string cur;
@@ -679,7 +752,7 @@ namespace conspiracy {
                 while (iss >> w) {
                     if (cur.empty()) {
                         cur = w;
-                    } else if (cur.size() + 1 + w.size() <= 25) {
+                    } else if (cur.size() + 1 + w.size() <= 32) {
                         cur += " " + w;
                     } else {
                         // Only push segment if it's meaningful (at least 10 chars)
@@ -707,6 +780,9 @@ namespace conspiracy {
             t+=0.4;
         }
         res.push_back(evt_bg(0,t));
+        
+        // // Add cloaked figure character that slides in at the beginning and stays for the entire video
+        // res.push_back(evt_character(0, t, "res/cloaked-figure.png"));
 
         // res
         title = "SIGMA CONSPIRACY THEORY | STAY WOKE";

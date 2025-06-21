@@ -808,6 +808,64 @@ Mat video::write_evt(VideoCapture &src, const vec<int> &active, int frm, const v
                     res.at<Vec3b>(r,c) = Vec3b(0,0,0);
                 }
             }
+        } else if (evts[ind].type==EvtType::Character) {
+            // CHARACTER - render PNG with sliding animation
+            Mat character_img = imread(evts[ind].character_image_path, IMREAD_UNCHANGED);
+            if (character_img.empty()) {
+                printf("[write_evt character event] ERROR: Could not load character image: %s\n", evts[ind].character_image_path.c_str());
+                continue;
+            }
+            
+            // Calculate animation progress (0.0 = start, 1.0 = end)
+            float animation_duration = 0.5; // 0.5 seconds for the slide-in animation
+            int animation_frames = t2frm(animation_duration);
+            int elapsed_frames = frm - evts[ind].st;
+            float progress = std::min(1.0f, (float)elapsed_frames / animation_frames);
+            
+            // Ease-out function for smooth animation
+            float eased_progress = 1.0f - (1.0f - progress) * (1.0f - progress);
+            
+            // Calculate Y position for sliding animation
+            float final_y = 0; // Final position: top-left at (0,0)
+            float start_y = H; // Start from bottom of screen
+            float current_y = start_y + (final_y - start_y) * eased_progress;
+            
+            // Use character at full 1080x1920 size (no scaling)
+            int char_width = character_img.cols;
+            int char_height = character_img.rows;
+            
+            // Position: top-left at (0, current_y)
+            int char_x = 0;
+            int char_y = current_y;
+            
+            // Blend character onto the frame (handle transparency)
+            for (int y = 0; y < char_height; y++) {
+                for (int x = 0; x < char_width; x++) {
+                    int frame_y = char_y + y;
+                    int frame_x = char_x + x;
+                    
+                    if (frame_y >= 0 && frame_y < H && frame_x >= 0 && frame_x < W) {
+                        if (character_img.channels() == 4) {
+                            Vec4b char_pixel = character_img.at<Vec4b>(y, x);
+                            // Handle alpha channel for transparency
+                            float alpha = char_pixel[3] / 255.0f;
+                            if (alpha > 0.01f) { // Only render if not transparent
+                                Vec3b &frame_pixel = res.at<Vec3b>(frame_y, frame_x);
+                                frame_pixel[0] = (1.0f - alpha) * frame_pixel[0] + alpha * char_pixel[0];
+                                frame_pixel[1] = (1.0f - alpha) * frame_pixel[1] + alpha * char_pixel[1];
+                                frame_pixel[2] = (1.0f - alpha) * frame_pixel[2] + alpha * char_pixel[2];
+                            }
+                        } else {
+                            Vec3b char_pixel = character_img.at<Vec3b>(y, x);
+                            // No alpha channel, direct copy
+                            Vec3b &frame_pixel = res.at<Vec3b>(frame_y, frame_x);
+                            frame_pixel[0] = char_pixel[0];
+                            frame_pixel[1] = char_pixel[1];
+                            frame_pixel[2] = char_pixel[2];
+                        }
+                    }
+                }
+            }
         } else if (evts[ind].type==EvtType::Text) {
             // TEXT - no effects applied here
             draw_glowing_text(res, evts[ind].text_str, evts[ind].text_big ? 90 : 60, Scalar(255,255,255), Scalar(0,0,255), 45);
@@ -933,6 +991,48 @@ Mat video::write_evt(VideoCapture &src, const vec<int> &active, int frm, const v
             for (int i=y; i<y+h; ++i) {
                 for (int j=x; j<x+w; ++j) {
                     res.at<Vec3b>(i,j) = j>px ? Vec3b(128,128,128) : Vec3b(50,50,255);
+                }
+            }
+        } else if (evts[ind].type==EvtType::PngOverlay) {
+            // PNG OVERLAY - render PNG at specified position with original resolution
+            Mat png_img = imread(evts[ind].png_overlay_path, IMREAD_UNCHANGED);
+            if (png_img.empty()) {
+                printf("[write_evt png_overlay event] ERROR: Could not load PNG image: %s\n", evts[ind].png_overlay_path.c_str());
+                continue;
+            }
+            
+            int png_width = png_img.cols;
+            int png_height = png_img.rows;
+            int start_x = evts[ind].png_overlay_col;
+            int start_y = evts[ind].png_overlay_row;
+            
+            // Render PNG onto the frame at the specified position
+            for (int y = 0; y < png_height; y++) {
+                for (int x = 0; x < png_width; x++) {
+                    int frame_y = start_y + y;
+                    int frame_x = start_x + x;
+                    
+                    // Check bounds
+                    if (frame_y >= 0 && frame_y < H && frame_x >= 0 && frame_x < W) {
+                        if (png_img.channels() == 4) {
+                            // Handle RGBA (with alpha channel)
+                            Vec4b png_pixel = png_img.at<Vec4b>(y, x);
+                            float alpha = png_pixel[3] / 255.0f;
+                            if (alpha > 0.01f) { // Only render if not transparent
+                                Vec3b &frame_pixel = res.at<Vec3b>(frame_y, frame_x);
+                                frame_pixel[0] = (1.0f - alpha) * frame_pixel[0] + alpha * png_pixel[0];
+                                frame_pixel[1] = (1.0f - alpha) * frame_pixel[1] + alpha * png_pixel[1];
+                                frame_pixel[2] = (1.0f - alpha) * frame_pixel[2] + alpha * png_pixel[2];
+                            }
+                        } else {
+                            // Handle RGB (no alpha channel)
+                            Vec3b png_pixel = png_img.at<Vec3b>(y, x);
+                            Vec3b &frame_pixel = res.at<Vec3b>(frame_y, frame_x);
+                            frame_pixel[0] = png_pixel[0];
+                            frame_pixel[1] = png_pixel[1];
+                            frame_pixel[2] = png_pixel[2];
+                        }
+                    }
                 }
             }
         }
