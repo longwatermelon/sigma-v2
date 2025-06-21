@@ -51,6 +51,7 @@ enum class EvtType {
     TimerBar=8,
     Sfx=9,
     PngOverlay=10,
+    TopCaption=11,
 };
 
 struct Evt {
@@ -83,6 +84,10 @@ struct Evt {
 
     // caption
     string caption_text;
+    string caption_audio_path; // path to pre-generated TTS audio file
+
+    // top caption
+    string top_caption_text;
 
     // character
     string character_image_path;
@@ -151,12 +156,22 @@ inline Evt evt_lftxt(float st, float nd, string s) {
     return e;
 }
 
-inline Evt evt_caption(float st, float nd, string s) {
+inline Evt evt_caption(float st, float nd, string s, string audio_path = "") {
     Evt e;
     e.type=EvtType::Caption;
     e.st=t2frm(st);
     e.nd=t2frm(nd);
     e.caption_text=s;
+    e.caption_audio_path=audio_path;
+    return e;
+}
+
+inline Evt evt_top_caption(float st, float nd, string s) {
+    Evt e;
+    e.type=EvtType::TopCaption;
+    e.st=t2frm(st);
+    e.nd=t2frm(nd);
+    e.top_caption_text=s;
     return e;
 }
 
@@ -702,12 +717,12 @@ namespace quiz {
         // Add PNG overlays - positioned at mid-right (col=580, row=650)
         // Thinking image during questions and timers
         for (auto &[start_time, end_time] : thinking_periods) {
-            res.push_back(evt_png_overlay(start_time, end_time, "res/video/images/bateman-think.png", 650, 580));
+            res.push_back(evt_png_overlay(start_time, end_time, "res/video/images/bateman-think.png", 750, 540));
         }
         
         // Drinking image during all other periods
         for (auto &[start_time, end_time] : drinking_periods) {
-            res.push_back(evt_png_overlay(start_time, end_time, "res/video/images/bateman-drink.png", 650, 580));
+            res.push_back(evt_png_overlay(start_time, end_time, "res/video/images/bateman-drink.png", 750, 540));
         }
         
         // res.push_back(evt_lftxt(0,nd,"*1EASY:\n1.\n2.\n*2MEDIUM:\n3.\n4.\n*3HARD:\n5.\n6."));
@@ -728,11 +743,12 @@ namespace conspiracy {
         printf("sending openai request...\n");
         string prompt = " \
             Write a sigma male conspiracy theory. \
-            Make it 5 sentences long, and each sentence should be a low-medium length. \
+            Start with a short title phrase (just 2-4 words maximum), then put \"====\" after it. \
+            Then write 5 sentences that make up the conspiracy theory content, each should be a low-medium length. \
             After each sentence ends, put a \"====\" at the end before the start of the next sentence. \
             Make sure to cite specific events or statistics to support your argument. \
             Your events or statistics don't have to be real, but make them sound convincing. \
-            Make it really delusional and ridiculous, but make it convincing too. Start off with a hook that'll reel people in. \
+            Make it really delusional and ridiculous, but make it convincing too. Start the content off with a hook that'll reel people in. \
             The general topic is: `"+topic+"`. \
         ";
         string body = openai_req("gpt-4.1", prompt);
@@ -741,13 +757,32 @@ namespace conspiracy {
         printf("%s\n", body.c_str());
 
         // push events
+        random_device rd;
+        mt19937 g(rd());
         float t=0;
+        
+        // Extract title (first line) and content lines (rest)
+        string title_text = "";
+        vec<string> content_lines;
         for (int i=0; i<sz(lines); ++i) {
+            if (i == 0) {
+                title_text = lines[i];
+            } else {
+                content_lines.push_back(lines[i]);
+            }
+        }
+        
+        // Process content lines for captions and TTS
+        for (int i=0; i<sz(content_lines); ++i) {
+            // Choose face for this entire sentence (50% chance to switch)
+            bool use_drinking = (g() % 100) < 50;
+            string png_path = use_drinking ? "res/video/images/bateman-drink.png" : "res/video/images/bateman-think.png";
+            
             // greedily segment the sentence into strings of at most 32 characters
             vec<string> segs;
             {
                 string cur;
-                istringstream iss(lines[i]);
+                istringstream iss(content_lines[i]);
                 string w;
                 while (iss >> w) {
                     if (cur.empty()) {
@@ -773,13 +808,27 @@ namespace conspiracy {
             }
 
             for (const string &seg : segs) {
-                float dur = tts_dur(seg);
-                res.push_back(evt_caption(t, t + dur, seg));
+                // Generate TTS file and get its path
+                string tts_path = tts_generate_persistent(seg);
+                float dur = wav_dur(tts_path);
+                if (dur < 0) dur = 1.0; // fallback duration
+                
+                // Create caption event with audio path
+                res.push_back(evt_caption(t, t + dur, seg, tts_path));
+                
+                // Add PNG overlay - use the same face for all segments of this sentence
+                res.push_back(evt_png_overlay(t, t + dur, png_path, 750, 540));
+                
                 t += dur;
             }
             t+=0.4;
         }
         res.push_back(evt_bg(0,t));
+        
+        // Add title that displays for the entire video duration
+        if (!title_text.empty()) {
+            res.push_back(evt_top_caption(0, t, title_text));
+        }
         
         // // Add cloaked figure character that slides in at the beginning and stays for the entire video
         // res.push_back(evt_character(0, t, "res/cloaked-figure.png"));

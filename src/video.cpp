@@ -470,6 +470,67 @@ void draw_top_text_wrap(cv::Mat &frame, const std::string &text, const std::stri
     }
 }
 
+void draw_top_caption(cv::Mat &frame, const std::string &text, int fontHeight = 80) {
+    // Create FreeType object
+    cv::Ptr<cv::freetype::FreeType2> ft2 = cv::freetype::createFreeType2();
+    ft2->loadFontData("res/font.ttf", 0);
+
+    // Split text into lines
+    std::vector<std::string> lines;
+    std::istringstream textStream(text);
+    std::string line;
+    while (std::getline(textStream, line)) {
+        lines.push_back(line);
+    }
+
+    // Calculate text dimensions
+    int lineSpacing = 15;
+    int totalTextHeight = lines.size() * fontHeight + (lines.size() - 1) * lineSpacing;
+    int maxTextWidth = 0;
+    
+    for (const auto &currentLine : lines) {
+        cv::Size textSize = ft2->getTextSize(currentLine, fontHeight, -1, nullptr);
+        maxTextWidth = std::max(maxTextWidth, textSize.width);
+    }
+
+    // Position near top of screen (y = 200)
+    int initialY = 200 - totalTextHeight / 2 + fontHeight;
+    
+    // Calculate background rectangle with padding
+    int padding = 25;
+    int bgX = (frame.cols - maxTextWidth) / 2 - padding;
+    int bgY = initialY - fontHeight;
+    int bgWidth = maxTextWidth + 2 * padding;
+    int bgHeight = totalTextHeight + 2 * padding;
+    
+    // Draw rounded black background
+    cv::Rect bgRect(bgX, bgY, bgWidth, bgHeight);
+    // Clamp rectangle to frame bounds
+    bgRect.x = std::max(0, bgRect.x);
+    bgRect.y = std::max(0, bgRect.y);
+    bgRect.width = std::min(bgRect.width, frame.cols - bgRect.x);
+    bgRect.height = std::min(bgRect.height, frame.rows - bgRect.y);
+    
+    cv::rectangle(frame, bgRect, cv::Scalar(0, 0, 0), -1);
+    
+    // Draw rounded corners by drawing circles at corners
+    int cornerRadius = 10;
+    cv::circle(frame, cv::Point(bgRect.x + cornerRadius, bgRect.y + cornerRadius), cornerRadius, cv::Scalar(0, 0, 0), -1);
+    cv::circle(frame, cv::Point(bgRect.x + bgRect.width - cornerRadius, bgRect.y + cornerRadius), cornerRadius, cv::Scalar(0, 0, 0), -1);
+    cv::circle(frame, cv::Point(bgRect.x + cornerRadius, bgRect.y + bgRect.height - cornerRadius), cornerRadius, cv::Scalar(0, 0, 0), -1);
+    cv::circle(frame, cv::Point(bgRect.x + bgRect.width - cornerRadius, bgRect.y + bgRect.height - cornerRadius), cornerRadius, cv::Scalar(0, 0, 0), -1);
+
+    // Render each line of text in red
+    for (size_t i = 0; i < lines.size(); ++i) {
+        const std::string &currentLine = lines[i];
+        cv::Size textSize = ft2->getTextSize(currentLine, fontHeight, -1, nullptr);
+        cv::Point textOrg((frame.cols - textSize.width) / 2, initialY + i * (fontHeight + lineSpacing));
+
+        // Draw the text in red (BGR format: 0, 0, 255)
+        ft2->putText(frame, currentLine, textOrg, fontHeight, cv::Scalar(0, 0, 255), -1, cv::LINE_AA, false);
+    }
+}
+
 // st: start frame
 // cur: cur frame
 // includes motion blur
@@ -911,7 +972,7 @@ Mat video::write_evt(VideoCapture &src, const vec<int> &active, int frm, const v
             draw_top_text_wrap(res, evts[ind].top_text_str, "res/font.ttf", 60);
         } else if (evts[ind].type==EvtType::HBar) {
             // HORIZONTAL BLACK BAR
-            draw_horizontal_black_band(res);
+            draw_horizontal_black_band(res, 1380);
         } else if (evts[ind].type==EvtType::LeftText) {
             // LEFT TEXT - no effects applied here
             draw_text_left(res, evts[ind].left_text_str, 80, Scalar(255,255,255));
@@ -927,59 +988,58 @@ Mat video::write_evt(VideoCapture &src, const vec<int> &active, int frm, const v
                     std::this_thread::sleep_for(std::chrono::milliseconds(100 - elapsed));
                 }
                 
-                // Generate speech audio using OpenAI TTS
-                int idx = sz(aud);
-                string wav_path = "out/" + to_string(idx) + ".wav";
-
-                try {
-                    tts_generate(evts[ind].caption_text, wav_path);
-                    last_tts_time = std::chrono::steady_clock::now(); // Update last TTS time
-
-                    // Add a small delay to ensure file is fully written
-                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                // Use pre-generated TTS audio if available
+                string wav_path;
+                if (!evts[ind].caption_audio_path.empty()) {
+                    wav_path = evts[ind].caption_audio_path;
+                } else {
+                    // Fallback: generate TTS on the fly (for backward compatibility)
+                    int idx = sz(aud);
+                    wav_path = "out/" + to_string(idx) + ".wav";
                     
-                    // Verify WAV file exists and has content
-                    std::ifstream wav_check(wav_path, std::ios::binary | std::ios::ate);
-                    if (!wav_check.good() || wav_check.tellg() == 0) {
-                        std::cerr << "WAV file is empty or missing: " << wav_path << std::endl;
-                        wav_check.close();
-                        // Retry TTS generation once
-                        std::cerr << "Retrying TTS generation..." << std::endl;
-                        tts_generate(evts[ind].caption_text, wav_path);
-                        std::this_thread::sleep_for(std::chrono::milliseconds(200));
-                    }
-                    wav_check.close();
+                        try {
+                            tts_generate(evts[ind].caption_text, wav_path);
+                            last_tts_time = std::chrono::steady_clock::now(); // Update last TTS time
 
-                    // Verify final WAV file exists and has content
-                    std::ifstream final_check(wav_path, std::ios::binary | std::ios::ate);
-                    if (final_check.good() && final_check.tellg() > 0) {
-                        final_check.close();
+                            // Add a small delay to ensure file is fully written
+                            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                            
+                            // Verify WAV file exists and has content
+                            std::ifstream wav_check(wav_path, std::ios::binary | std::ios::ate);
+                            if (!wav_check.good() || wav_check.tellg() == 0) {
+                                std::cerr << "WAV file is empty or missing: " << wav_path << std::endl;
+                                wav_check.close();
+                                // Retry TTS generation once
+                                std::cerr << "Retrying TTS generation..." << std::endl;
+                                tts_generate(evts[ind].caption_text, wav_path);
+                                std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                            }
+                            wav_check.close();
+                        } catch (const std::exception& e) {
+                            std::cerr << "TTS generation failed for caption: " << e.what() << std::endl;
+                            std::cerr << "Caption text was: \"" << evts[ind].caption_text << "\"" << std::endl;
+                            std::cerr << "Character count: " << evts[ind].caption_text.length() << std::endl;
+                            // Clean up any partial files
+                            system(("rm -f " + wav_path).c_str());
+                            // Continue without this audio
+                        }
+                }
+                
+                // Verify final WAV file exists and has content (for both pre-generated and on-the-fly)
+                std::ifstream final_check(wav_path, std::ios::binary | std::ios::ate);
+                if (final_check.good() && final_check.tellg() > 0) {
+                    final_check.close();
 
-                        // Trim trailing silence using C++ instead of ffmpeg
-                        // TEMPORARILY DISABLED - may cause hanging
-                        // string tmp_path = "out/tmp_trim.wav";
-                        // if (trim_wav_silence(wav_path, tmp_path, -40.0)) {
-                        //     system(("mv " + tmp_path + " " + wav_path).c_str());
-                        // } else {
-                        //     std::cerr << "Failed to trim silence for caption audio, using original" << std::endl;
-                        // }
-
-                        // Add to audio timeline since WAV generation succeeded
-                        aud.push_back(frm2t(evts[ind].st));
-                    } else {
-                        std::cerr << "WAV file verification failed, skipping this audio." << std::endl;
-                        final_check.close();
-                    }
-                } catch (const std::exception& e) {
-                    std::cerr << "TTS generation failed for caption: " << e.what() << std::endl;
-                    std::cerr << "Caption text was: \"" << evts[ind].caption_text << "\"" << std::endl;
-                    std::cerr << "Caption index: " << idx << std::endl;
-                    std::cerr << "Character count: " << evts[ind].caption_text.length() << std::endl;
-                    // Clean up any partial files
-                    system(("rm -f " + wav_path).c_str());
-                    // Continue without this audio
+                    // Add to audio timeline since WAV file is available
+                    aud.push_back(frm2t(evts[ind].st));
+                } else {
+                    std::cerr << "WAV file verification failed, skipping this audio: " << wav_path << std::endl;
+                    final_check.close();
                 }
             }
+        } else if (evts[ind].type==EvtType::TopCaption) {
+            // TOP CAPTION - visual only, no TTS generation
+            draw_top_caption(res, evts[ind].top_caption_text, 80);
         } else if (evts[ind].type==EvtType::TimerBar) {
             // TIMER BAR
             int y=0.75*H;
