@@ -1007,6 +1007,9 @@ Mat video::write_evt(VideoCapture &src, const vec<int> &active, int frm, const v
                     final_check.close();
                 }
             }
+        } else if (evts[ind].type==EvtType::AutoCaption) {
+            // AUTO CAPTION - visual only, transcribed from audio
+            draw_text_bottom(res, evts[ind].auto_caption_text, 70, Scalar(255,255,255));
         } else if (evts[ind].type==EvtType::TopCaption) {
             // TOP CAPTION - visual only, no TTS generation
             draw_top_caption(res, evts[ind].top_caption_text, 80);

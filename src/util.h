@@ -854,3 +854,110 @@ inline std::vector<std::string> split_on_delimiter(const std::string& input, con
     parts.push_back(input.substr(start));
     return parts;
 }
+
+struct WhisperSegment {
+    float start;
+    float end;
+    string text;
+};
+
+inline std::vector<WhisperSegment> whisper_transcribe(const std::string& audio_file) {
+    std::string api_key = std::getenv("OPENAI_API_KEY");
+    if (api_key.empty()) {
+        throw std::runtime_error("OPENAI_API_KEY environment variable not set");
+    }
+
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        throw std::runtime_error("Failed to initialize CURL for Whisper API");
+    }
+
+    std::string response_data;
+    struct curl_slist* headers = NULL;
+    headers = curl_slist_append(headers, ("Authorization: Bearer " + api_key).c_str());
+
+    // Create multipart form data
+    curl_mime* form = curl_mime_init(curl);
+    curl_mimepart* field;
+
+    // Add audio file
+    field = curl_mime_addpart(form);
+    curl_mime_name(field, "file");
+    curl_mime_filedata(field, audio_file.c_str());
+
+    // Add model
+    field = curl_mime_addpart(form);
+    curl_mime_name(field, "model");
+    curl_mime_data(field, "whisper-1", CURL_ZERO_TERMINATED);
+
+    // Add response format for timestamps
+    field = curl_mime_addpart(form);
+    curl_mime_name(field, "response_format");
+    curl_mime_data(field, "verbose_json", CURL_ZERO_TERMINATED);
+
+    // Add timestamp granularities for word-level timing
+    field = curl_mime_addpart(form);
+    curl_mime_name(field, "timestamp_granularities[]");
+    curl_mime_data(field, "word", CURL_ZERO_TERMINATED);
+
+    curl_easy_setopt(curl, CURLOPT_URL, "https://api.openai.com/v1/audio/transcriptions");
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_MIMEPOST, form);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_data);
+
+    CURLcode res = curl_easy_perform(curl);
+    
+    // Get HTTP response code
+    long http_code = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    
+    curl_mime_free(form);
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK) {
+        throw std::runtime_error("OpenAI Whisper API request failed: " + std::string(curl_easy_strerror(res)));
+    }
+
+    if (http_code != 200) {
+        std::cerr << "OpenAI Whisper API returned HTTP " << http_code << std::endl;
+        std::cerr << "Response: " << response_data.substr(0, 500) << std::endl;
+        throw std::runtime_error("OpenAI Whisper API error: HTTP " + std::to_string(http_code));
+    }
+
+    // Parse JSON response for word-level timing
+    std::vector<WhisperSegment> segments;
+    try {
+        json response_json = json::parse(response_data);
+        
+        if (response_json.contains("words")) {
+            for (const auto& word : response_json["words"]) {
+                WhisperSegment ws;
+                ws.start = word["start"].get<float>();
+                ws.end = word["end"].get<float>();
+                ws.text = word["word"].get<std::string>();
+                
+                // Trim whitespace from text
+                size_t start_pos = ws.text.find_first_not_of(" \t\n\r");
+                if (start_pos != std::string::npos) {
+                    size_t end_pos = ws.text.find_last_not_of(" \t\n\r");
+                    ws.text = ws.text.substr(start_pos, end_pos - start_pos + 1);
+                }
+                
+                // Only add non-empty words
+                if (!ws.text.empty()) {
+                    segments.push_back(ws);
+                }
+            }
+        } else {
+            std::cerr << "No words found in Whisper response" << std::endl;
+        }
+    } catch (const json::parse_error& e) {
+        throw std::runtime_error("Failed to parse Whisper API response: " + std::string(e.what()));
+    } catch (const std::exception& e) {
+        throw std::runtime_error("Error processing Whisper API response: " + std::string(e.what()));
+    }
+
+    return segments;
+}

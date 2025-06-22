@@ -52,6 +52,7 @@ enum class EvtType {
     Sfx=9,
     PngOverlay=10,
     TopCaption=11,
+    AutoCaption=12,
 };
 
 struct Evt {
@@ -88,6 +89,9 @@ struct Evt {
 
     // top caption
     string top_caption_text;
+
+    // auto caption
+    string auto_caption_text;
 
     // character
     string character_image_path;
@@ -172,6 +176,15 @@ inline Evt evt_top_caption(float st, float nd, string s) {
     e.st=t2frm(st);
     e.nd=t2frm(nd);
     e.top_caption_text=s;
+    return e;
+}
+
+inline Evt evt_auto_caption(float st, float nd, string s) {
+    Evt e;
+    e.type=EvtType::AutoCaption;
+    e.st=t2frm(st);
+    e.nd=t2frm(nd);
+    e.auto_caption_text=s;
     return e;
 }
 
@@ -840,50 +853,58 @@ namespace conspiracy {
                 continue; // skip invalid speaker
             }
             
-            // greedily segment the text into strings of at most 30 characters
-            vec<string> segs;
-            {
-                string cur;
-                istringstream iss(text);
-                string w;
-                while (iss >> w) {
-                    if (cur.empty()) {
-                        cur = w;
-                    } else if (cur.size() + 1 + w.size() <= 30) {
-                        cur += " " + w;
+            // Generate TTS for the full sentence
+            string tts_path = tts_generate_persistent_dialogue(text, speaker);
+            float sentence_dur = wav_dur(tts_path);
+            if (sentence_dur < 0) sentence_dur = 1.0; // fallback duration
+            
+            // Add Sfx event for the sentence audio
+            res.push_back(evt_sfx(t, tts_path));
+            
+            // Use Whisper to get precise word timings
+            printf("Transcribing sentence with Whisper...\n");
+            std::vector<WhisperSegment> segments = whisper_transcribe(tts_path);
+            
+            // Group words into ≤30 character chunks using precise word timing
+            if (!segments.empty()) {
+                string current_chunk = "";
+                float chunk_start = t + segments[0].start;
+                
+                for (int i = 0; i < sz(segments); ++i) {
+                    string word = segments[i].text;
+                    
+                    // Check if adding this word would exceed 30 characters
+                    string potential_chunk = current_chunk.empty() ? word : current_chunk + " " + word;
+                    
+                    if (potential_chunk.size() <= 30) {
+                        // Add word to current chunk
+                        current_chunk = potential_chunk;
                     } else {
-                        // Only push segment if it's meaningful (at least 10 chars)
-                        if (cur.size() >= 10) {
-                            segs.push_back(cur);
+                        // Current chunk is full, create AutoCaption event
+                        if (!current_chunk.empty()) {
+                            float chunk_end = t + segments[i-1].end;
+                            printf("Auto-caption chunk: %.2f-%.2f: '%s'\n", chunk_start, chunk_end, current_chunk.c_str());
+                            res.push_back(evt_auto_caption(chunk_start, chunk_end, current_chunk));
                         }
-                        cur = w;
+                        
+                        // Start new chunk with current word
+                        current_chunk = word;
+                        chunk_start = t + segments[i].start;
                     }
                 }
-                if (!cur.empty()) {
-                    // If the last segment is too short, merge it with the previous one
-                    if (cur.size() < 10 && !segs.empty()) {
-                        segs.back() += " " + cur;
-                    } else {
-                        segs.push_back(cur);
-                    }
+                
+                // Add final chunk if not empty
+                if (!current_chunk.empty()) {
+                    float chunk_end = t + segments[sz(segments)-1].end;
+                    printf("Auto-caption chunk: %.2f-%.2f: '%s'\n", chunk_start, chunk_end, current_chunk.c_str());
+                    res.push_back(evt_auto_caption(chunk_start, chunk_end, current_chunk));
                 }
             }
-
-            for (const string &seg : segs) {
-                // Generate TTS file and get its path with speaker-specific voice
-                string tts_path = tts_generate_persistent_dialogue(seg, speaker);
-                float dur = wav_dur(tts_path);
-                if (dur < 0) dur = 1.0; // fallback duration
-                
-                // Create caption event with audio path
-                res.push_back(evt_caption(t, t + dur, seg, tts_path));
-                
-                // Add PNG overlay - positioned based on speaker
-                res.push_back(evt_png_overlay(t, t + dur, png_path, 650, png_col));
-                
-                t += dur;
-            }
-            t+=0.4;
+            
+            // Add PNG overlay for the entire sentence duration
+            res.push_back(evt_png_overlay(t, t + sentence_dur, png_path, 650, png_col));
+            
+            t += sentence_dur + 0.4;
         }
         res.push_back(evt_bg(0,t));
         
