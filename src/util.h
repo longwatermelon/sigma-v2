@@ -391,7 +391,7 @@ inline void tts_generate(const string &text, const string &output_file) {
         {"input", tts_preproc(text)},
         {"voice", "onyx"},
         {"response_format", "wav"},
-        {"speed", 1.15},
+        {"speed", 1.4},
         {"instructions", "You are FURIOUS and EXPOSING the truth. Speak with seething anger and absolute authority, like a whistleblower who's been silenced for too long. Voice: Deep, intense, and commanding with barely-controlled rage. Delivery: Sharp, aggressive, and accusatory - every word is a weapon against the system. Build intensity throughout each sentence, emphasizing key words with growling contempt. Sound like you're personally offended by the lies and deception. Pronunciation: Bite consonants hard, stretch important words for emphasis, and let your anger fuel the passion behind every revelation."}
     };
 
@@ -482,7 +482,7 @@ inline void tts_generate(const string &text, const string &output_file) {
     
     // Trim silence from the end using FFmpeg - conservative trimming
     string temp_file = output_file + "_trimmed.wav";
-    string cmd = "ffmpeg -i \"" + output_file + "\" -af \"silenceremove=stop_periods=-1:stop_duration=0.1:stop_threshold=-30dB\" -y \"" + temp_file + "\" 2>/dev/null";
+    string cmd = "ffmpeg -i \"" + output_file + "\" -af \"silenceremove=stop_periods=-1:stop_duration=0.05:stop_threshold=-30dB\" -y \"" + temp_file + "\" 2>/dev/null";
     
     int result = system(cmd.c_str());
     
@@ -612,6 +612,153 @@ inline string tts_generate_persistent(const string &text) {
     
     // Generate TTS audio (trimmed version for playback)
     tts_generate(text, wav_file);
+    
+    return wav_file;
+}
+
+inline void tts_generate_dialogue(const string &text, const string &output_file, const string &speaker) {
+    string api_key = getenv("OPENAI_API_KEY") ? getenv("OPENAI_API_KEY") : "";
+    if (api_key.empty()) {
+        throw std::runtime_error("OPENAI_API_KEY environment variable not set");
+    }
+
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        throw std::runtime_error("Failed to initialize CURL for OpenAI TTS");
+    }
+
+    std::string response_data;
+    struct curl_slist* headers = NULL;
+    headers = curl_slist_append(headers, ("Authorization: Bearer " + api_key).c_str());
+    headers = curl_slist_append(headers, "Content-Type: application/json");
+
+    string instructions, voice="onyx";
+    if (speaker == "BATEMAN") {
+        instructions = "You are Patrick Bateman - confident, smug, and intellectually superior. Speak with calm authority and barely-contained arrogance. Your voice is deep, measured, and dripping with condescension. You know you're right and everyone else is beneath you. Deliver facts like weapons, with perfect pronunciation and a slight smirk in your voice.";
+        voice = "onyx";
+    } else if (speaker == "CHUDJAK") {
+        instructions = "You are Chudjak - anxious, paranoid, and unhinged. Your voice is shaky, high-pitched, and filled with nervous energy. Speak with frantic desperation and disbelief. Sound like you're constantly on edge, questioning everything with fearful incredulity. Voice should crack with anxiety and sound perpetually panicked.";
+        voice = "echo";
+    } else {
+        // Default to conspiracy voice
+        instructions = "You are FURIOUS and EXPOSING the truth. Speak with seething anger and absolute authority, like a whistleblower who's been silenced for too long. Voice: Deep, intense, and commanding with barely-controlled rage. Delivery: Sharp, aggressive, and accusatory - every word is a weapon against the system. Build intensity throughout each sentence, emphasizing key words with growling contempt. Sound like you're personally offended by the lies and deception. Pronunciation: Bite consonants hard, stretch important words for emphasis, and let your anger fuel the passion behind every revelation.";
+    }
+
+    json request_body = {
+        {"model", "gpt-4o-mini-tts"},
+        {"input", tts_preproc(text)},
+        {"voice", voice},
+        {"response_format", "wav"},
+        {"speed", 1.},
+        {"instructions", instructions}
+    };
+
+    std::string request_str = request_body.dump();
+
+    string url = "https://api.openai.com/v1/audio/speech";
+    
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, request_str.c_str());
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_data);
+
+    CURLcode res = curl_easy_perform(curl);
+    
+    // Get HTTP response code
+    long http_code = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK) {
+        throw std::runtime_error("OpenAI TTS API request failed: " + std::string(curl_easy_strerror(res)));
+    }
+
+    // Check HTTP status code
+    if (http_code != 200) {
+        std::cerr << "OpenAI TTS API returned HTTP " << http_code << std::endl;
+        std::cerr << "Response: " << response_data.substr(0, 500) << std::endl;
+        
+        // Handle specific HTTP error codes
+        if (http_code == 429) {
+            throw std::runtime_error("OpenAI TTS API rate limit exceeded. Please wait before retrying.");
+        } else if (http_code == 401) {
+            throw std::runtime_error("OpenAI TTS API authentication failed. Check your API key.");
+        } else if (http_code == 400) {
+            // Bad request - likely due to invalid text
+            std::cerr << "Text that caused error: \"" << text << "\"" << std::endl;
+        }
+    }
+
+    // Check if we got a valid response
+    if (response_data.empty()) {
+        throw std::runtime_error("OpenAI TTS API returned empty response");
+    }
+    
+    // Check for JSON error response (which would start with '{')
+    if (!response_data.empty() && response_data[0] == '{') {
+        // Try to parse as JSON to get error message
+        try {
+            json error_response = json::parse(response_data);
+            std::string error_msg = "OpenAI TTS API error: ";
+            if (error_response.contains("error")) {
+                if (error_response["error"].contains("message")) {
+                    error_msg += error_response["error"]["message"].get<std::string>();
+                } else {
+                    error_msg += error_response["error"].dump();
+                }
+            } else {
+                error_msg += response_data;
+            }
+            throw std::runtime_error(error_msg);
+        } catch (const json::parse_error&) {
+            throw std::runtime_error("OpenAI TTS API returned unexpected response: " + response_data.substr(0, 100));
+        }
+    }
+
+    // Write the audio data to file
+    std::ofstream audio_file(output_file, std::ios::binary);
+    if (!audio_file) {
+        throw std::runtime_error("Failed to create output file: " + output_file);
+    }
+    audio_file.write(response_data.c_str(), response_data.size());
+    audio_file.close();
+    
+    // Verify the file was written successfully
+    std::ifstream verify_file(output_file, std::ios::binary | std::ios::ate);
+    if (!verify_file.good() || verify_file.tellg() == 0) {
+        throw std::runtime_error("Failed to write audio data to file: " + output_file);
+    }
+    verify_file.close();
+    
+    // Fix OpenAI's corrupted WAV header (chunk size = 0xFFFFFFFF)
+    if (!fix_wav_header(output_file)) {
+        throw std::runtime_error("Failed to fix WAV header for file: " + output_file);
+    }
+    
+    // Trim silence from the end using FFmpeg - conservative trimming
+    string temp_file = output_file + "_trimmed.wav";
+    string cmd = "ffmpeg -i \"" + output_file + "\" -af \"silenceremove=stop_periods=-1:stop_duration=0.02:stop_threshold=-30dB\" -y \"" + temp_file + "\" 2>/dev/null";
+    
+    int result = system(cmd.c_str());
+    
+    if (result == 0) {
+        system(("mv \"" + temp_file + "\" \"" + output_file + "\"").c_str());
+    } else {
+        // If FFmpeg fails, clean up temp file
+        system(("rm -f \"" + temp_file + "\"").c_str());
+    }
+}
+
+inline string tts_generate_persistent_dialogue(const string &text, const string &speaker) {
+    // Generate unique filename for this TTS audio
+    static int tts_counter = 0;
+    string wav_file = "out/" + to_string(tts_counter++) + ".wav";
+    
+    // Generate TTS audio (trimmed version for playbook)
+    tts_generate_dialogue(text, wav_file, speaker);
     
     return wav_file;
 }

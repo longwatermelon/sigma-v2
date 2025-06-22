@@ -92,7 +92,7 @@ int main(int argc, char **argv) {
     }
 
     // add audio
-    printf("adding audio...\n");
+    printf("adding music...\n");
     string cmd="ffmpeg -i no-audio.mp4 -i res/audio/"+bgm+".mp3 -c:v copy -c:a aac -strict experimental -shortest -y out/out.mp4 > ffmpeg.log 2>&1";
     system(cmd.c_str());
     system("rm no-audio.mp4");
@@ -131,7 +131,7 @@ int main(int argc, char **argv) {
             }
             audcmd += "amix=inputs="+to_string(sz(aud)+1)+":normalize=0:duration=first\" -c:v copy -c:a aac out/tmp.mp4 > ffmpeg.log 2>&1";
             
-            printf("Running audio mixing command...\n");
+            printf("mixing audio events in...\n");
             int result = system(audcmd.c_str());
             if (result != 0) {
                 printf("FFmpeg audio mixing failed with exit code: %d\n", result);

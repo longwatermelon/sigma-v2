@@ -742,13 +742,19 @@ namespace conspiracy {
         // gen content
         printf("sending openai request...\n");
         string prompt = " \
-            Write a sigma male conspiracy theory. \
+            Write a sigma male conspiracy theory as a dialogue between Patrick Bateman and Chudjak. \
             Start with a short title phrase (just 2-4 words maximum), then put \"====\" after it. \
-            Then write 5 sentences that make up the conspiracy theory content, each should be a low-medium length. \
-            After each sentence ends, put a \"====\" at the end before the start of the next sentence. \
-            Make sure to cite specific events or statistics to support your argument. \
-            Your events or statistics don't have to be real, but make them sound convincing. \
-            Make it really delusional and ridiculous, but make it convincing too. Start the content off with a hook that'll reel people in. \
+            Then write 10-12 lines of alternating dialogue where Chudjak questions/probes and Bateman answers smugly. \
+            Start with Chudjak speaking first, then alternate speakers. \
+            Format each line as: SPEAKER:[TONE] text \
+            Where SPEAKER is either CHUDJAK or BATEMAN. \
+            For BATEMAN: [1] = slamming facts in chudjak's face, [2] = posing food for thought \
+            For CHUDJAK: [1] = questioning nervously, [2] = going absolutely insane and crashing down \
+            After each line, put \"====\" \
+            Make sure Bateman cites specific events or statistics to support his arguments. \
+            The statistics don't have to be real, but make them sound convincing. \
+            Make it really delusional and ridiculous, but make it convincing too. \
+            Chudjak should start skeptical but gradually become more unhinged as Bateman reveals more. \
             The general topic is: `"+topic+"`. \
         ";
         string body = openai_req("gpt-4.1", prompt);
@@ -761,33 +767,89 @@ namespace conspiracy {
         mt19937 g(rd());
         float t=0;
         
-        // Extract title (first line) and content lines (rest)
+        // Extract title (first line) and dialogue lines (rest)
+        printf("Total lines from split: %d\n", sz(lines));
+        for (int i=0; i<sz(lines); ++i) {
+            printf("Line %d: '%s'\n", i, lines[i].c_str());
+        }
+        
         string title_text = "";
-        vec<string> content_lines;
+        vec<string> dialogue_lines;
         for (int i=0; i<sz(lines); ++i) {
             if (i == 0) {
                 title_text = lines[i];
             } else {
-                content_lines.push_back(lines[i]);
+                dialogue_lines.push_back(lines[i]);
             }
         }
         
-        // Process content lines for captions and TTS
-        for (int i=0; i<sz(content_lines); ++i) {
-            // Choose face for this entire sentence (50% chance to switch)
-            bool use_drinking = (g() % 100) < 50;
-            string png_path = use_drinking ? "res/video/images/bateman-drink.png" : "res/video/images/bateman-think.png";
+        printf("Title: '%s'\n", title_text.c_str());
+        printf("Dialogue lines: %d\n", sz(dialogue_lines));
+        
+        // Process dialogue lines for captions and TTS
+        for (int i=0; i<sz(dialogue_lines); ++i) {
+            string line = dialogue_lines[i];
             
-            // greedily segment the sentence into strings of at most 32 characters
+            // Trim whitespace from the line
+            size_t start = line.find_first_not_of(" \t\n\r");
+            if (start == string::npos) continue; // line is all whitespace
+            size_t end = line.find_last_not_of(" \t\n\r");
+            line = line.substr(start, end - start + 1);
+            
+            if (line.empty()) continue;
+            
+            printf("Processing dialogue line: '%s'\n", line.c_str());
+            
+            // Parse line format: SPEAKER:[TONE] text
+            string speaker, tone_str, text;
+            size_t colon_pos = line.find(':');
+            if (colon_pos == string::npos) {
+                printf("No colon found in line, skipping\n");
+                continue;
+            }
+            
+            speaker = line.substr(0, colon_pos);
+            string rest = line.substr(colon_pos + 1);
+            
+            // Extract tone [1] or [2]
+            int tone = 1; // default
+            if (rest.size() > 3 && rest[0] == '[' && rest[2] == ']') {
+                tone = rest[1] - '0';
+                text = rest.substr(3);
+                // Remove leading space
+                if (!text.empty() && text[0] == ' ') text = text.substr(1);
+            } else {
+                text = rest;
+            }
+            
+            // Determine PNG path based on speaker and tone
+            printf("Speaker: '%s', Tone: %d, Text: '%s'\n", speaker.c_str(), tone, text.c_str());
+            
+            string png_path;
+            int png_col; // column position
+            if (speaker == "BATEMAN") {
+                png_path = (tone == 1) ? "res/video/images/bateman-drink.png" : "res/video/images/bateman-think.png";
+                png_col = 580; // right side
+                printf("Using Bateman image: %s\n", png_path.c_str());
+            } else if (speaker == "CHUDJAK") {
+                png_path = (tone == 1) ? "res/video/images/chudjak-cry.png" : "res/video/images/chudjak-insane.png";
+                png_col = 20; // left side
+                printf("Using Chudjak image: %s\n", png_path.c_str());
+            } else {
+                printf("Invalid speaker '%s', skipping line\n", speaker.c_str());
+                continue; // skip invalid speaker
+            }
+            
+            // greedily segment the text into strings of at most 30 characters
             vec<string> segs;
             {
                 string cur;
-                istringstream iss(content_lines[i]);
+                istringstream iss(text);
                 string w;
                 while (iss >> w) {
                     if (cur.empty()) {
                         cur = w;
-                    } else if (cur.size() + 1 + w.size() <= 32) {
+                    } else if (cur.size() + 1 + w.size() <= 30) {
                         cur += " " + w;
                     } else {
                         // Only push segment if it's meaningful (at least 10 chars)
@@ -808,16 +870,16 @@ namespace conspiracy {
             }
 
             for (const string &seg : segs) {
-                // Generate TTS file and get its path
-                string tts_path = tts_generate_persistent(seg);
+                // Generate TTS file and get its path with speaker-specific voice
+                string tts_path = tts_generate_persistent_dialogue(seg, speaker);
                 float dur = wav_dur(tts_path);
                 if (dur < 0) dur = 1.0; // fallback duration
                 
                 // Create caption event with audio path
                 res.push_back(evt_caption(t, t + dur, seg, tts_path));
                 
-                // Add PNG overlay - use the same face for all segments of this sentence
-                res.push_back(evt_png_overlay(t, t + dur, png_path, 750, 540));
+                // Add PNG overlay - positioned based on speaker
+                res.push_back(evt_png_overlay(t, t + dur, png_path, 650, png_col));
                 
                 t += dur;
             }
