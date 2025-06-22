@@ -865,16 +865,27 @@ namespace conspiracy {
             printf("Transcribing sentence with Whisper...\n");
             std::vector<WhisperSegment> segments = whisper_transcribe(tts_path);
             
-            // Group words into ≤30 character chunks using precise word timing
+            // Group words from original text using Whisper timing
             if (!segments.empty()) {
+                // Split original text into words to preserve formatting
+                std::vector<string> original_words;
+                std::istringstream iss(text);
+                string word;
+                while (iss >> word) {
+                    original_words.push_back(word);
+                }
+                
+                // Map Whisper segments to original words (assuming they align)
+                int min_words = min(sz(segments), sz(original_words));
+                
                 string current_chunk = "";
                 float chunk_start = t + segments[0].start;
                 
-                for (int i = 0; i < sz(segments); ++i) {
-                    string word = segments[i].text;
+                for (int i = 0; i < min_words; ++i) {
+                    string original_word = original_words[i];
                     
                     // Check if adding this word would exceed 30 characters
-                    string potential_chunk = current_chunk.empty() ? word : current_chunk + " " + word;
+                    string potential_chunk = current_chunk.empty() ? original_word : current_chunk + " " + original_word;
                     
                     if (potential_chunk.size() <= 30) {
                         // Add word to current chunk
@@ -888,14 +899,14 @@ namespace conspiracy {
                         }
                         
                         // Start new chunk with current word
-                        current_chunk = word;
+                        current_chunk = original_word;
                         chunk_start = t + segments[i].start;
                     }
                 }
                 
                 // Add final chunk if not empty
                 if (!current_chunk.empty()) {
-                    float chunk_end = t + segments[sz(segments)-1].end;
+                    float chunk_end = t + segments[min_words-1].end;
                     printf("Auto-caption chunk: %.2f-%.2f: '%s'\n", chunk_start, chunk_end, current_chunk.c_str());
                     res.push_back(evt_auto_caption(chunk_start, chunk_end, current_chunk));
                 }
