@@ -371,9 +371,9 @@ inline string tts_preproc(string s) {
 }
 
 inline void tts_generate(const string &text, const string &output_file) {
-    string api_key = getenv("OPENAI_API_KEY") ? getenv("OPENAI_API_KEY") : "";
+    string api_key = getenv("SIGMA_CENTRAL_API_KEY") ? getenv("SIGMA_CENTRAL_API_KEY") : "";
     if (api_key.empty()) {
-        throw std::runtime_error("OPENAI_API_KEY environment variable not set");
+        throw std::runtime_error("SIGMA_CENTRAL_API_KEY environment variable not set");
     }
 
     CURL* curl = curl_easy_init();
@@ -495,9 +495,9 @@ inline void tts_generate(const string &text, const string &output_file) {
 }
 
 inline void tts_generate_no_trim(const string &text, const string &output_file) {
-    string api_key = getenv("OPENAI_API_KEY") ? getenv("OPENAI_API_KEY") : "";
+    string api_key = getenv("SIGMA_CENTRAL_API_KEY") ? getenv("SIGMA_CENTRAL_API_KEY") : "";
     if (api_key.empty()) {
-        throw std::runtime_error("OPENAI_API_KEY environment variable not set");
+        throw std::runtime_error("SIGMA_CENTRAL_API_KEY environment variable not set");
     }
 
     CURL* curl = curl_easy_init();
@@ -608,7 +608,7 @@ inline void tts_generate_no_trim(const string &text, const string &output_file) 
 inline string tts_generate_persistent(const string &text) {
     // Generate unique filename for this TTS audio
     static int tts_counter = 0;
-    string wav_file = "out/" + to_string(tts_counter++) + ".wav";
+    string wav_file = "out/tts_" + to_string(tts_counter++) + ".wav";
     
     // Generate TTS audio (trimmed version for playback)
     tts_generate(text, wav_file);
@@ -617,9 +617,9 @@ inline string tts_generate_persistent(const string &text) {
 }
 
 inline void tts_generate_dialogue(const string &text, const string &output_file, const string &speaker) {
-    string api_key = getenv("OPENAI_API_KEY") ? getenv("OPENAI_API_KEY") : "";
+    string api_key = getenv("SIGMA_CENTRAL_API_KEY") ? getenv("SIGMA_CENTRAL_API_KEY") : "";
     if (api_key.empty()) {
-        throw std::runtime_error("OPENAI_API_KEY environment variable not set");
+        throw std::runtime_error("SIGMA_CENTRAL_API_KEY environment variable not set");
     }
 
     CURL* curl = curl_easy_init();
@@ -755,7 +755,7 @@ inline void tts_generate_dialogue(const string &text, const string &output_file,
 inline string tts_generate_persistent_dialogue(const string &text, const string &speaker) {
     // Generate unique filename for this TTS audio
     static int tts_counter = 0;
-    string wav_file = "out/" + to_string(tts_counter++) + ".wav";
+    string wav_file = "out/tts_" + to_string(tts_counter++) + ".wav";
     
     // Generate TTS audio (trimmed version for playbook)
     tts_generate_dialogue(text, wav_file, speaker);
@@ -793,9 +793,9 @@ inline double tts_dur(const string &s) {
 }
 
 inline std::string openai_req(const std::string& model, const std::string& prompt) {
-    std::string api_key = std::getenv("OPENAI_API_KEY");
+    std::string api_key = std::getenv("SIGMA_CENTRAL_API_KEY");
     if (api_key.empty()) {
-        throw std::runtime_error("OPENAI_API_KEY environment variable not set");
+        throw std::runtime_error("SIGMA_CENTRAL_API_KEY environment variable not set");
     }
 
     CURL* curl = curl_easy_init();
@@ -862,9 +862,9 @@ struct WhisperSegment {
 };
 
 inline std::vector<WhisperSegment> whisper_transcribe(const std::string& audio_file) {
-    std::string api_key = std::getenv("OPENAI_API_KEY");
+    std::string api_key = std::getenv("SIGMA_CENTRAL_API_KEY");
     if (api_key.empty()) {
-        throw std::runtime_error("OPENAI_API_KEY environment variable not set");
+        throw std::runtime_error("SIGMA_CENTRAL_API_KEY environment variable not set");
     }
 
     CURL* curl = curl_easy_init();

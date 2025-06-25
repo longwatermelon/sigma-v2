@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Set up OpenAI API key for TTS
-export OPENAI_API_KEY="your-api-key-here"
+export SIGMA_CENTRAL_API_KEY="your-api-key-here"
 
 # Build the project
 make
@@ -86,7 +86,7 @@ The system uses an event-driven architecture where different event types (Backgr
   - `parkour.mp4`: Used for quiz and conspiracy videos
 - `res/font.ttf`: Font for text rendering
 - `res/cloaked-figure.png`: Background image for conspiracy theory videos
-- Environment variable `OPENAI_API_KEY` required for TTS functionality
+- Environment variable `SIGMA_CENTRAL_API_KEY` required for TTS functionality
 - `out/`: Generated video output directory
 
 ### Video Types
@@ -112,7 +112,7 @@ The project uses OpenAI's TTS API for high-quality neural voice synthesis. Key f
 - **Functions**: 
   - `tts_generate(text, output_file)`: Generate WAV audio file from text using OpenAI TTS
   - `tts_dur(text)`: Calculate duration of spoken text for timeline sync
-- **Setup**: Set the `OPENAI_API_KEY` environment variable with your OpenAI API key
+- **Setup**: Set the `SIGMA_CENTRAL_API_KEY` environment variable with your OpenAI API key
 - **Integration**: TTS is used for duration calculations in video event timing
 
 The TTS system provides high-quality voice synthesis through OpenAI's latest neural models with enhanced control capabilities.

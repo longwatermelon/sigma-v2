@@ -964,8 +964,8 @@ Mat video::write_evt(VideoCapture &src, const vec<int> &active, int frm, const v
                     wav_path = evts[ind].caption_audio_path;
                 } else {
                     // Fallback: generate TTS on the fly (for backward compatibility)
-                    int idx = sz(aud);
-                    wav_path = "out/" + to_string(idx) + ".wav";
+                    static int tts_counter = 0;
+                    wav_path = "out/tts_" + to_string(tts_counter++) + ".wav";
                     
                     try {
                         tts_generate(evts[ind].caption_text, wav_path);
