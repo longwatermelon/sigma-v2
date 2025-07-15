@@ -768,6 +768,7 @@ namespace conspiracy {
             The statistics don't have to be real, but make them sound convincing. \
             Make it really delusional and ridiculous, but make it convincing too. \
             Chudjak should start skeptical but gradually become more unhinged as Bateman reveals more. \
+            Keep lines short, punchy, and sensationalist, crafted to evoke deep emotional responses from viewers, suitable for hooking short attention spans. \
             The general topic is: `"+topic+"`. \
         ";
         string body = openai_req("gpt-4.1", prompt);

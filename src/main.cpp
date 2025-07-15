@@ -158,5 +158,6 @@ int main(int argc, char **argv) {
     printf("========\n");
     printf("%s\n", title.c_str());
 
-    system("notify-send \"Video creation complete\"");
+    // system("notify-send \"Video creation complete\"");
+    system(("terminal-notifier -title \"Sigma V2\" -message \"Video generated (took "+to_string(dur/60)+"m "+to_string(dur%60)+"s)\"").c_str());
 }

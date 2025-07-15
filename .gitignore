@@ -22,4 +22,5 @@ res/video/compare/walter.mp4
 res/video/edit/shelby.mp4
 res/video/edit/anime.mp4
 
-openai-tts-docs.txt
+.DS_STORE
+a.out.DSYM
