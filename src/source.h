@@ -757,14 +757,22 @@ namespace conspiracy {
         printf("sending openai request...\n");
         string prompt = " \
             Write a sigma male conspiracy theory as a dialogue between Patrick Bateman and Chudjak. \
-            Start with a short title phrase (just 2-4 words maximum), then put \"====\" after it. \
-            Then write 10-12 lines of alternating dialogue where Chudjak questions/probes and Bateman answers smugly. \
+            Return your response as a JSON object with the following structure: \
+            { \
+                \"title\": \"short title phrase (2-4 words maximum)\", \
+                \"segments\": [ \
+                    { \
+                        \"speaker\": \"CHUDJAK\", \
+                        \"sprite\": 1, \
+                        \"text\": \"dialogue content\" \
+                    } \
+                ] \
+            } \
+            Write 10-12 segments of alternating dialogue where Chudjak questions/probes and Bateman answers smugly. \
             Start with Chudjak speaking first, then alternate speakers. \
-            Format each line as: SPEAKER:[TONE] text \
-            Where SPEAKER is either CHUDJAK or BATEMAN. \
-            For BATEMAN: [1] = slamming facts in chudjak's face, [2] = posing food for thought \
-            For CHUDJAK: [1] = questioning nervously, [2] = going absolutely insane and crashing down \
-            After each line, put \"====\" \
+            Speaker values must be either \"CHUDJAK\" or \"BATEMAN\". \
+            For BATEMAN: sprite 1 = slamming facts in chudjak's face, sprite 2 = posing food for thought \
+            For CHUDJAK: sprite 1 = questioning nervously, sprite 2 = going absolutely insane and crashing down \
             Make sure Bateman cites specific events or statistics to support his arguments. \
             The statistics don't have to be real, but make them sound convincing. \
             Make it really delusional and ridiculous, but make it convincing too. \
@@ -772,86 +780,60 @@ namespace conspiracy {
             Keep lines short, punchy, and sensationalist, crafted to evoke deep emotional responses from viewers, suitable for hooking short attention spans. \
             The general topic is: `"+topic+"`. \
         ";
-        string body = openai_req("gpt-4.1", prompt);
-        vec<string> lines = split_on_delimiter(body);
+        json response_format = {{"type", "json_object"}};
+        string body = openai_req("gpt-4.1", prompt, response_format);
+        // Parse JSON response
         printf("received!\n");
         printf("%s\n", body.c_str());
+        
+        json response_json;
+        try {
+            response_json = json::parse(body);
+        } catch (const json::parse_error& e) {
+            printf("JSON parse error: %s\n", e.what());
+            printf("Response body: %s\n", body.c_str());
+            throw std::runtime_error("Failed to parse OpenAI JSON response");
+        }
+
+        // Extract title and segments
+        string title_text = response_json.value("title", "");
+        printf("Title: '%s'\n", title_text.c_str());
+        
+        auto segments = response_json.value("segments", json::array());
+        printf("Segments: %d\n", (int)segments.size());
 
         // push events
         random_device rd;
         mt19937 g(rd());
         float t=0;
         
-        // Extract title (first line) and dialogue lines (rest)
-        printf("Total lines from split: %d\n", sz(lines));
-        for (int i=0; i<sz(lines); ++i) {
-            printf("Line %d: '%s'\n", i, lines[i].c_str());
-        }
-        
-        string title_text = "";
-        vec<string> dialogue_lines;
-        for (int i=0; i<sz(lines); ++i) {
-            if (i == 0) {
-                title_text = lines[i];
-            } else {
-                dialogue_lines.push_back(lines[i]);
-            }
-        }
-        
-        printf("Title: '%s'\n", title_text.c_str());
-        printf("Dialogue lines: %d\n", sz(dialogue_lines));
-        
-        // Process dialogue lines for captions and TTS
-        for (int i=0; i<sz(dialogue_lines); ++i) {
-            string line = dialogue_lines[i];
+        // Process segments for captions and TTS
+        for (const auto& segment : segments) {
+            // Extract segment data
+            string speaker = segment.value("speaker", "");
+            int sprite = segment.value("sprite", 1);
+            string text = segment.value("text", "");
             
-            // Trim whitespace from the line
-            size_t start = line.find_first_not_of(" \t\n\r");
-            if (start == string::npos) continue; // line is all whitespace
-            size_t end = line.find_last_not_of(" \t\n\r");
-            line = line.substr(start, end - start + 1);
-            
-            if (line.empty()) continue;
-            
-            printf("Processing dialogue line: '%s'\n", line.c_str());
-            
-            // Parse line format: SPEAKER:[TONE] text
-            string speaker, tone_str, text;
-            size_t colon_pos = line.find(':');
-            if (colon_pos == string::npos) {
-                printf("No colon found in line, skipping\n");
+            if (speaker.empty() || text.empty()) {
+                printf("Invalid segment: speaker='%s', text='%s', skipping\n", speaker.c_str(), text.c_str());
                 continue;
             }
             
-            speaker = line.substr(0, colon_pos);
-            string rest = line.substr(colon_pos + 1);
+            printf("Processing segment: speaker='%s', sprite=%d, text='%s'\n", speaker.c_str(), sprite, text.c_str());
             
-            // Extract tone [1] or [2]
-            int tone = 1; // default
-            if (rest.size() > 3 && rest[0] == '[' && rest[2] == ']') {
-                tone = rest[1] - '0';
-                text = rest.substr(3);
-                // Remove leading space
-                if (!text.empty() && text[0] == ' ') text = text.substr(1);
-            } else {
-                text = rest;
-            }
-            
-            // Determine PNG path based on speaker and tone
-            printf("Speaker: '%s', Tone: %d, Text: '%s'\n", speaker.c_str(), tone, text.c_str());
-            
+            // Determine PNG path based on speaker and sprite
             string png_path;
             int png_col; // column position
             if (speaker == "BATEMAN") {
-                png_path = (tone == 1) ? "res/video/images/bateman-drink.png" : "res/video/images/bateman-think.png";
+                png_path = (sprite == 1) ? "res/video/images/bateman-drink.png" : "res/video/images/bateman-think.png";
                 png_col = 580; // right side
                 printf("Using Bateman image: %s\n", png_path.c_str());
             } else if (speaker == "CHUDJAK") {
-                png_path = (tone == 1) ? "res/video/images/chudjak-cry.png" : "res/video/images/chudjak-insane.png";
+                png_path = (sprite == 1) ? "res/video/images/chudjak-cry.png" : "res/video/images/chudjak-insane.png";
                 png_col = 20; // left side
                 printf("Using Chudjak image: %s\n", png_path.c_str());
             } else {
-                printf("Invalid speaker '%s', skipping line\n", speaker.c_str());
+                printf("Invalid speaker '%s', skipping segment\n", speaker.c_str());
                 continue; // skip invalid speaker
             }
             
@@ -864,11 +846,9 @@ namespace conspiracy {
             res.push_back(evt_sfx(t, tts_path));
             
             // Use Whisper to get precise word timings
-            printf("Transcribing sentence with Whisper...\n");
-            std::vector<WhisperSegment> segments = whisper_transcribe(tts_path);
+            std::vector<WhisperSegment> whisper_segments = whisper_transcribe(tts_path);
             
-            // Group words from original text using Whisper timing
-            if (!segments.empty()) {
+            if (!whisper_segments.empty()) {
                 // Split original text into words to preserve formatting
                 std::vector<string> original_words;
                 std::istringstream iss(text);
@@ -878,10 +858,10 @@ namespace conspiracy {
                 }
                 
                 // Map Whisper segments to original words (assuming they align)
-                int min_words = min(sz(segments), sz(original_words));
+                int min_words = min(sz(whisper_segments), sz(original_words));
                 
                 string current_chunk = "";
-                float chunk_start = t + segments[0].start;
+                float chunk_start = t + whisper_segments[0].start;
                 
                 for (int i = 0; i < min_words; ++i) {
                     string original_word = original_words[i];
@@ -895,20 +875,20 @@ namespace conspiracy {
                     } else {
                         // Current chunk is full, create AutoCaption event
                         if (!current_chunk.empty()) {
-                            float chunk_end = t + segments[i-1].end;
+                            float chunk_end = t + whisper_segments[i-1].end;
                             printf("Auto-caption chunk: %.2f-%.2f: '%s'\n", chunk_start, chunk_end, current_chunk.c_str());
                             res.push_back(evt_auto_caption(chunk_start, chunk_end, current_chunk));
                         }
                         
                         // Start new chunk with current word
                         current_chunk = original_word;
-                        chunk_start = t + segments[i].start;
+                        chunk_start = t + whisper_segments[i].start;
                     }
                 }
                 
                 // Add final chunk if not empty
                 if (!current_chunk.empty()) {
-                    float chunk_end = t + segments[min_words-1].end;
+                    float chunk_end = t + whisper_segments[min_words-1].end;
                     printf("Auto-caption chunk: %.2f-%.2f: '%s'\n", chunk_start, chunk_end, current_chunk.c_str());
                     res.push_back(evt_auto_caption(chunk_start, chunk_end, current_chunk));
                 }

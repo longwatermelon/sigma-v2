@@ -792,7 +792,7 @@ inline double tts_dur(const string &s) {
     return res;
 }
 
-inline std::string openai_req(const std::string& model, const std::string& prompt) {
+inline std::string openai_req(const std::string& model, const std::string& prompt, const json& response_format = json()) {
     std::string api_key = std::getenv("SIGMA_CENTRAL_API_KEY");
     if (api_key.empty()) {
         throw std::runtime_error("SIGMA_CENTRAL_API_KEY environment variable not set");
@@ -817,6 +817,11 @@ inline std::string openai_req(const std::string& model, const std::string& promp
             }
         }}
     };
+    
+    // Add response_format if provided
+    if (!response_format.is_null()) {
+        request_body["response_format"] = response_format;
+    }
 
     std::string request_str = request_body.dump();
 
