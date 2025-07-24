@@ -369,6 +369,7 @@ namespace edit {
                     "WATCH SIGMA EDITS.\nIT NOURISHES YOUR MIND.",
                     "MASTER THE COLD GAZE.\nYOU MUST INTIMIDATE YOUR ENEMIES.",
                     "NEVER TOUCH RECEIPTS.\nTHEY LOWER YOUR TESTOSTERONE.",
+                    "DON'T BREATHE.\nTHE SOUND OF YOUR LUNGS\nMAKES YOU LOSE AURA."
                 };
 
                 random_device rd;
