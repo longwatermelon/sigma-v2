@@ -847,6 +847,69 @@ inline std::string openai_req(const std::string& model, const std::string& promp
     }
 }
 
+inline std::string anthropic_req(const std::string& prompt, const json& response_format = json()) {
+    std::string api_key = std::getenv("SIGMA_CENTRAL_ANTHROPIC_API_KEY");
+    if (api_key.empty()) {
+        throw std::runtime_error("SIGMA_CENTRAL_ANTHROPIC_API_KEY environment variable not set");
+    }
+
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        throw std::runtime_error("Failed to initialize CURL for Anthropic");
+    }
+
+    std::string response_data;
+    struct curl_slist* headers = NULL;
+    headers = curl_slist_append(headers, ("x-api-key: " + api_key).c_str());
+    headers = curl_slist_append(headers, "Content-Type: application/json");
+    headers = curl_slist_append(headers, "anthropic-version: 2023-06-01");
+
+    json request_body = {
+        {"model", "claude-3-haiku-20240307"},
+        {"max_tokens", 4000},
+        {"messages", {
+            {
+                {"role", "user"},
+                {"content", prompt}
+            }
+        }}
+    };
+
+    std::string request_str = request_body.dump();
+
+    curl_easy_setopt(curl, CURLOPT_URL, "https://api.anthropic.com/v1/messages");
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, request_str.c_str());
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_data);
+
+    CURLcode res = curl_easy_perform(curl);
+    
+    // Get HTTP response code
+    long http_code = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK) {
+        throw std::runtime_error("Anthropic API request failed: " + std::string(curl_easy_strerror(res)));
+    }
+
+    if (http_code != 200) {
+        std::cerr << "Anthropic API returned HTTP " << http_code << std::endl;
+        std::cerr << "Response: " << response_data.substr(0, 500) << std::endl;
+        throw std::runtime_error("Anthropic API error: HTTP " + std::to_string(http_code));
+    }
+
+    json response_json = json::parse(response_data);
+    try {
+        return response_json["content"][0]["text"];
+    } catch (...) {
+        throw std::runtime_error("Unexpected Anthropic API response format: " + response_data);
+    }
+}
+
 inline std::vector<std::string> split_on_delimiter(const std::string& input, const std::string& delimiter = "====") {
     std::vector<std::string> parts;
     size_t start = 0;

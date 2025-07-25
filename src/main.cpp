@@ -76,10 +76,16 @@ int main(int argc, char **argv) {
         aud=video::create(out, src, edit::audsrc_evts(bgm, title), vidsrc_cuts("anime"));
     } else if (type==8) {
         // conspiracy
+        if (argc < 4) {
+            printf("Error: conspiracy format requires API choice and topic\n");
+            printf("Usage: ./a.out 8 [0=openai, 1=anthropic] \"topic\"\n");
+            return 1;
+        }
         printf("video type: conspiracy\n");
         VideoCapture src("res/video/parkour.mp4");
         bgm="wiishop";
-        aud=video::create(out, src, conspiracy::audsrc_evts(argv[2],title), vidsrc_cuts("parkour"));
+        int api_choice = stoi(argv[2]);
+        aud=video::create(out, src, conspiracy::audsrc_evts(api_choice, argv[3], title), vidsrc_cuts("parkour"));
     }
 
     int dur = chrono::duration_cast<chrono::seconds>(chrono::high_resolution_clock::now()-st).count();

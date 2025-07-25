@@ -750,11 +750,11 @@ namespace quiz {
 }
 
 namespace conspiracy {
-    inline vec<Evt> audsrc_evts(const string &topic, string &title) {
+    inline vec<Evt> audsrc_evts(int api_choice, const string &topic, string &title) {
         vec<Evt> res;
 
         // gen content
-        printf("sending openai request...\n");
+        printf("sending API request...\n");
         string prompt = " \
             Write a sigma male conspiracy theory as a dialogue between Patrick Bateman and Chudjak. \
             Return your response as a JSON object with the following structure: \
@@ -780,8 +780,17 @@ namespace conspiracy {
             Keep lines short, punchy, and sensationalist, crafted to evoke deep emotional responses from viewers, suitable for hooking short attention spans. \
             The general topic is: `"+topic+"`. \
         ";
-        json response_format = {{"type", "json_object"}};
-        string body = openai_req("gpt-4.1", prompt, response_format);
+        
+        string body;
+        if (api_choice == 0) {
+            // OpenAI
+            json response_format = {{"type", "json_object"}};
+            body = openai_req("gpt-4.1", prompt, response_format);
+        } else {
+            // Anthropic - add JSON instruction to prompt since it doesn't support response_format
+            string anthropic_prompt = prompt + "\n\nIMPORTANT: You MUST respond with valid JSON only, no other text before or after the JSON object.";
+            body = anthropic_req(anthropic_prompt);
+        }
         // Parse JSON response
         printf("received!\n");
         printf("%s\n", body.c_str());
@@ -792,7 +801,7 @@ namespace conspiracy {
         } catch (const json::parse_error& e) {
             printf("JSON parse error: %s\n", e.what());
             printf("Response body: %s\n", body.c_str());
-            throw std::runtime_error("Failed to parse OpenAI JSON response");
+            throw std::runtime_error("Failed to parse API JSON response");
         }
 
         // Extract title and segments

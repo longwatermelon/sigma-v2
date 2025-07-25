@@ -9,8 +9,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Setup and Build Commands
 
 ```bash
-# Set up OpenAI API key for TTS
+# Set up OpenAI API key for TTS and other services
 export SIGMA_CENTRAL_API_KEY="your-api-key-here"
+
+# Set up Anthropic API key for conspiracy dialogue generation (optional)
+export SIGMA_CENTRAL_ANTHROPIC_API_KEY="your-anthropic-api-key-here"
 
 # Build the project
 make
@@ -26,7 +29,8 @@ make
 ./a.out 5    # shelby meme compilation
 ./a.out 6    # quiz
 ./a.out 7    # anime edit (default)
-./a.out 8    # conspiracy (requires topic argument: ./a.out 8 "topic")
+./a.out 8 0 "topic"   # conspiracy with OpenAI (0=OpenAI, 1=Anthropic)
+./a.out 8 1 "topic"   # conspiracy with Anthropic
 
 # Show help (only shows types 1-6, but types 7-8 are also available)
 ./a.out -h
@@ -87,6 +91,7 @@ The system uses an event-driven architecture where different event types (Backgr
 - `res/font.ttf`: Font for text rendering
 - `res/cloaked-figure.png`: Background image for conspiracy theory videos
 - Environment variable `SIGMA_CENTRAL_API_KEY` required for TTS functionality
+- Environment variable `SIGMA_CENTRAL_ANTHROPIC_API_KEY` required for Anthropic conspiracy dialogue generation
 - `out/`: Generated video output directory
 
 ### Video Types
@@ -96,7 +101,7 @@ Each video type implements different content generation strategies:
 - **Meme compilations** (2, 5): Generate random captions over footage  
 - **Comparisons** (3): Character vs character battles with scoring
 - **Quiz videos** (6): Interactive sigma-themed questions with dynamic PNG overlays (bateman-think.png during questions/timers, bateman-drink.png during other periods)
-- **Conspiracy videos** (8): AI-generated conspiracy theories via OpenAI API with custom background imagery and TTS narration
+- **Conspiracy videos** (8): AI-generated conspiracy theories via OpenAI or Anthropic API with custom background imagery and TTS narration
 
 The system automatically generates titles and uses randomization to create varied content within each format. The default video type is 7 (anime edit) when no arguments are provided.
 
@@ -138,4 +143,4 @@ The project supports PNG image overlays with full transparency support and preci
 
 - The help menu (`./a.out -h`) only displays video types 1-6, but types 7 (anime edit) and 8 (conspiracy) are also available
 - Video types 1-2 (bateman edit/meme) may fail if `res/video/edit/bateman.mp4` is missing from the repository
-- Conspiracy videos require both the video type argument (8) and a topic string argument
+- Conspiracy videos require both the video type argument (8), API choice (0=OpenAI, 1=Anthropic), and a topic string argument
