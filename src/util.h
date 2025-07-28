@@ -391,7 +391,6 @@ inline void tts_generate(const string &text, const string &output_file) {
         {"input", tts_preproc(text)},
         {"voice", "onyx"},
         {"response_format", "wav"},
-        {"speed", 1.4},
         {"instructions", "You are FURIOUS and EXPOSING the truth. Speak with seething anger and absolute authority, like a whistleblower who's been silenced for too long. Voice: Deep, intense, and commanding with barely-controlled rage. Delivery: Sharp, aggressive, and accusatory - every word is a weapon against the system. Build intensity throughout each sentence, emphasizing key words with growling contempt. Sound like you're personally offended by the lies and deception. Pronunciation: Bite consonants hard, stretch important words for emphasis, and let your anger fuel the passion behind every revelation."}
     };
 
@@ -515,7 +514,6 @@ inline void tts_generate_no_trim(const string &text, const string &output_file) 
         {"input", tts_preproc(text)},
         {"voice", "onyx"},
         {"response_format", "wav"},
-        {"speed", 1.15},
         {"instructions", "You are FURIOUS and EXPOSING the truth. Speak with seething anger and absolute authority, like a whistleblower who's been silenced for too long. Voice: Deep, intense, and commanding with barely-controlled rage. Delivery: Sharp, aggressive, and accusatory - every word is a weapon against the system. Build intensity throughout each sentence, emphasizing key words with growling contempt. Sound like you're personally offended by the lies and deception. Pronunciation: Bite consonants hard, stretch important words for emphasis, and let your anger fuel the passion behind every revelation."}
     };
 
@@ -649,7 +647,6 @@ inline void tts_generate_dialogue(const string &text, const string &output_file,
         {"input", tts_preproc(text)},
         {"voice", voice},
         {"response_format", "wav"},
-        {"speed", 1.},
         {"instructions", instructions}
     };
 
