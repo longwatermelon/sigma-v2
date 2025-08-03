@@ -788,7 +788,7 @@ namespace conspiracy {
             body = openai_req("gpt-4.1", prompt, response_format);
         } else {
             // Anthropic - add JSON instruction to prompt since it doesn't support response_format
-            string anthropic_prompt = prompt + "\n\nIMPORTANT: You MUST respond with valid JSON only, no other text before or after the JSON object.";
+            string anthropic_prompt = prompt + "\n\nIMPORTANT: You MUST respond with valid JSON only, no other text before or after the JSON object. DO NOT WRAP THE JSON IN A CODE BLOCK. NO BACKTICKS SHOULD BE RETURNED.";
             body = anthropic_req(anthropic_prompt);
         }
         // Parse JSON response
