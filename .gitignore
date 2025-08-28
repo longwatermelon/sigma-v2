@@ -2,7 +2,7 @@ compile_commands.json
 .cache
 obj
 a.out
-out.mp4
+out/*
 ffmpeg.log
 no-audio.mp4
 .vscode
