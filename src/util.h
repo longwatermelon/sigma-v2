@@ -862,7 +862,7 @@ inline std::string anthropic_req(const std::string& prompt, const json& response
     headers = curl_slist_append(headers, "anthropic-version: 2023-06-01");
 
     json request_body = {
-        {"model", "claude-sonnet-4-20250514"},
+        {"model", "claude-opus-4-5-20251101"},
         {"max_tokens", 4000},
         {"messages", {
             {
